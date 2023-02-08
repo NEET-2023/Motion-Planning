@@ -61,12 +61,12 @@ class NaiveAtoB():
 
         # Set Twist values
         cmd_vel = Twist()
-        cmd_vel.linear.x = min(v[0], self.max_v)
-        cmd_vel.linear.y = min(v[1], self.max_v)
-        cmd_vel.linear.z = min(vz, self.max_v)
+        cmd_vel.linear.x = max(min(v[0], self.max_v), -self.max_v)
+        cmd_vel.linear.y = max(min(v[1], self.max_v), -self.max_v)
+        cmd_vel.linear.z = max(min(vz, self.max_v), -self.max_v)
 
         # TODO: publish instead of print
-        # print(cmd_vel)
+        print(cmd_vel)
         
 
     def at_goal(self, loc):

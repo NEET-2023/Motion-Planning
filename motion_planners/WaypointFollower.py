@@ -12,8 +12,8 @@ class WaypointFollower():
         self.kd = 0.6
         self.max_v = 2
         self.prev_v = np.array([0, 0, 0])
-        self.pub = rospy.Publisher('/cmd_vel', Twist)
-        rospy.init_node('waypointsFollower', anonymous=True, queue_size=1)
+        self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        rospy.init_node('waypointsFollower', anonymous=True)
         rospy.Subscriber('/ground_truth/state', Odometry, self.callback)
 
     def callback(self, msg):
