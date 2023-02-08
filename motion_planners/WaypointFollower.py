@@ -5,10 +5,10 @@ from nav_msgs.msg import Odometry
 
 class WaypointFollower():
     def __init__(self):
-        self.waypoints = np.array([[0, 0, 1], [1, -1, 5], [2, -4, 1], [-2, -1, 1]])
+        self.waypoints = np.array([[0, 0, 2], [1, -1, 5], [2, -4, 2], [-2, -1, 2]])
         self.threshold = 0.1
         self.waypoint_index = 0
-        self.kp = 0.8
+        self.kp = 1.0
         self.kd = 0.6
         self.max_v = 2
         self.prev_v = np.array([0, 0, 0])
@@ -33,9 +33,9 @@ class WaypointFollower():
 
         # create cmd_velocity object
         cmd_vel = Twist()
-        cmd_vel.linear.x = min(v[0], self.max_v)
-        cmd_vel.linear.y = min(v[1], self.max_v)
-        cmd_vel.linear.z = min(v[2], self.max_v)
+        cmd_vel.linear.x = max(min(v[0], self.max_v), -self.max_v)
+        cmd_vel.linear.y = max(min(v[1], self.max_v), -self.max_v)
+        cmd_vel.linear.z = max(min(v[2], self.max_v), -self.max_v)
 
         # publish message
         self.pub.publish(cmd_vel)

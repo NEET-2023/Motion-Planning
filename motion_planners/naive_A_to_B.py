@@ -15,9 +15,12 @@ class NaiveAtoB():
         self.waypoint_index = 0
         self.target_z = 1
         # PD controller initializations
-        self.kp = 0.8
-        self.kd = 0
+        self.kp = 1.0
+        self.kd = 0.6
+        self.kp_z = 3.0
+        self.kd_z = 0
         self.max_v = 2
+        self.max_vz = 3
         self.prev_v = np.array([0, 0])
         self.prev_vz = 0
         # Relevant information for controlling the distance from ground
@@ -56,17 +59,18 @@ class NaiveAtoB():
         self.prev_v = v
 
         error_Z = self.target_z - self.z
-        vz = self.kp*error_Z - self.kd*self.prev_vz
+        vz = self.kp_z*error_Z - self.kd_z*self.prev_vz
         self.prev_vz = vz
 
         # Set Twist values
         cmd_vel = Twist()
         cmd_vel.linear.x = max(min(v[0], self.max_v), -self.max_v)
         cmd_vel.linear.y = max(min(v[1], self.max_v), -self.max_v)
-        cmd_vel.linear.z = max(min(vz, self.max_v), -self.max_v)
+        cmd_vel.linear.z = max(min(vz, self.max_vz), -self.max_vz)
 
         # TODO: publish instead of print
-        print(cmd_vel)
+        # print(cmd_vel)
+        self.vel_pub.publish(cmd_vel)
         
 
     def at_goal(self, loc):
@@ -84,7 +88,7 @@ class NaiveAtoB():
         Creates a set of 2D coordinates for the drone to follow. For now hardcoded
         Returns: Nx2 numpy array
         """
-        return np.array([[0, 0], [5, 5], [-5, 5], [10, 10]])
+        return np.array([[0, -35], [-10, -30], [10, -30], [10, -40], [-10, -40]])
 
 if __name__ == '__main__':
     try:
