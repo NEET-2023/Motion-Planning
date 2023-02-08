@@ -1,7 +1,8 @@
-import rospy
 import numpy as np
+import rospy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Range
 
 class NaiveAtoB():
     """
@@ -18,13 +19,20 @@ class NaiveAtoB():
         self.kd = 0
         self.max_v = 2
         self.prev_v = np.array([0, 0])
-        self.prevz = 0
+        self.prev_vz = 0
+        # Relevant information for controlling the distance from ground
+        self.z = 0
+        self.target_ground_dist = 1
         # ROS relevant initializations
-        self.pub = rospy.Publisher('/cmd_vel', Twist)
+        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1) # FIGURE OUT HOW TO DEAL WITH THIS
         rospy.init_node('naiveAtoB', anonymous=True)
-        rospy.Subscriber('/ground_truth/state', Odometry, self.callback)
+        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
+        self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
 
-    def callback(self, msg):
+    def range_callback(self, msg):
+        self.z = msg.range
+
+    def odom_callback(self, msg):
         """
         Calculates the command velocities as a function of 2D location error and height error
         Publishes a Twist data type to set the velocity command
@@ -32,14 +40,14 @@ class NaiveAtoB():
         Inputs: msg (Odometry)
         Returns: None
         """
-        # uses ground truth data to get the position
         # TODO: use IMU data + starting position to track location
+        # uses ground truth data to get the position
         loc = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
         
         # determine if we are at the target waypoint to update the pointer
         if self.at_goal(loc):
             self.waypoint_index += 1
-            self.waypoitn_index % len(self.waypoints)
+            self.waypoint_index % len(self.waypoints)
         waypoint = self.waypoints[self.waypoint_index]
 
         # PD Controller
@@ -47,7 +55,7 @@ class NaiveAtoB():
         v = self.kp*error_2D - self.kd*self.prev_v
         self.prev_v = v
 
-        error_Z = self.target_z - msg.pose.pose.position.z
+        error_Z = self.target_z - self.z
         vz = self.kp*error_Z - self.kd*self.prev_vz
         self.prev_vz = vz
 
@@ -56,6 +64,10 @@ class NaiveAtoB():
         cmd_vel.linear.x = min(v[0], self.max_v)
         cmd_vel.linear.y = min(v[1], self.max_v)
         cmd_vel.linear.z = min(vz, self.max_v)
+
+        # TODO: publish instead of print
+        # print(cmd_vel)
+        
 
     def at_goal(self, loc):
         """
@@ -72,4 +84,11 @@ class NaiveAtoB():
         Creates a set of 2D coordinates for the drone to follow. For now hardcoded
         Returns: Nx2 numpy array
         """
-        return np.array([0, 0], [5, 5], [-5, 5], [10, 10])
+        return np.array([[0, 0], [5, 5], [-5, 5], [10, 10]])
+
+if __name__ == '__main__':
+    try:
+        NAB = NaiveAtoB()
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass
