@@ -50,7 +50,7 @@ class NaiveAtoB():
         # determine if we are at the target waypoint to update the pointer
         if self.at_goal(loc):
             self.waypoint_index += 1
-            self.waypoint_index % len(self.waypoints)
+            self.waypoint_index %= len(self.waypoints)
         waypoint = self.waypoints[self.waypoint_index]
 
         # PD Controller
@@ -88,7 +88,8 @@ class NaiveAtoB():
         Creates a set of 2D coordinates for the drone to follow. For now hardcoded
         Returns: Nx2 numpy array
         """
-        return np.array([[0, -35], [-10, -30], [10, -30], [10, -40], [-10, -40]])
+        # successful waypoint navigation
+        return np.array([[0, -45], [-10, -40], [10, -40], [10, -50], [-10, -50]])
 
 if __name__ == '__main__':
     try:
