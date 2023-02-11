@@ -17,13 +17,13 @@ class NaiveAtoB():
         # PD controller initializations
         self.kp = 1.0
         self.kd = 0.6
-        self.kp_z = 3.0
-        self.kd_z = 0
         self.max_v = 2
         self.max_vz = 3
         self.prev_v = np.array([0, 0])
         self.prev_vz = 0
-        # Relevant information for controlling the distance from ground
+        # Relevant information for PD control from ground
+        self.kp_z = 3.0
+        self.kd_z = 0
         self.z = 0
         self.target_ground_dist = 1
         # ROS relevant initializations
