@@ -23,7 +23,7 @@ class NaiveAtoB():
         self.prev_vz = 0
         # Relevant information for PD control from ground
         self.kp_z = 3.0
-        self.kd_z = 0
+        self.kd_z = 0.5
         self.z = 0
         self.target_ground_dist = 1
         # ROS relevant initializations
@@ -89,7 +89,7 @@ class NaiveAtoB():
         Returns: Nx2 numpy array
         """
         # successful waypoint navigation
-        return np.array([[0, -45], [-10, -40], [10, -40], [10, -50], [-10, -50]])
+        return np.array([[0, -45], [-10, -37], [10, -37], [10, -53], [-10, -53]])
 
 if __name__ == '__main__':
     try:
