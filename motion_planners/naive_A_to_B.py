@@ -90,6 +90,9 @@ class NaiveAtoB():
         """
         # successful waypoint navigation
         return np.array([[0, -45], [-10, -37], [10, -37], [10, -53], [-10, -53]])
+        # failure mode waypoint
+        # return np.array([[0, 0], [-30, 0]])
+
 
 if __name__ == '__main__':
     try:
