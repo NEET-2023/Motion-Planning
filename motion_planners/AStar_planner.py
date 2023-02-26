@@ -12,6 +12,7 @@ class Navigator():
         self.waypoints = None #list of tuples in order? (x,y,z)
         self.height_map = None
         self.occupancy_grid = None
+        self.max_row, self.max_col = 0, 0
         self.min_x, self.max_x = 0, 0
         self.min_y, self.max_y = 0, 0
         self.max_z = None 
@@ -50,7 +51,6 @@ class Navigator():
         Returns:
         None
         """
-        pass
 
     def odom_callback(self, msg):
         """
@@ -107,11 +107,33 @@ class Navigator():
         """
         pass
 
-    def meters_to_pixels(self, pt):
+    def meters_to_grid(self, x, y):
         """
-        Takes in a 
+        Takes in a location in meters and outputs the discretized grid location.
+
+        Parameters:
+        x, y (float): a x, y location in the continuous state space
+
+        Returns:
+        row, col (int): a coordiante in the discretized state space
         """
-        pass
+        row = (y - self.max_y)/(self.min_y - self.max_y)*self.max_row
+        col = (x - self.min_x)/(self.max_x - self.min_x)*self.max_col
+        return int(row), int(col)
+
+    def grid_to_meters(self, row, col):
+        """
+        Takes in a grid coordinate and returns a location in meters.
+
+        Parameters:
+        row, col (int): a row, col location in the discretized state space
+
+        Returns:
+        x, y (float): a x, y location in the continuous state space
+        """
+        x = (self.max_x - self.min_x)*col/self.max_col + self.min_x
+        y = (self.min_y - self.max_y)*row/self.max_row + self.max_y
+        return x, y
 
     def extract_path(self, final_node):
         """
@@ -128,12 +150,11 @@ class Navigator():
         points = []
         # backtrack through all nodes until we get to the orign node
         while True:
-            uv = np.array([node.location[0], node.location[1]])
+            row, col = node.location[0], node.location[1]
             # extract the height from the height map, +2 for buffer
-            height = self.height_map[uv[0], uv[1]] + 2
-            # xy = self.pixels_to_meters(uv)
-            # points.append(np.array([xy[0], xy[1], height]))
-            points.append(uv)
+            height = self.height_map[row, col] + 2
+            x, y = self.grid_to_meters(row, col)
+            points.append(np.array([x, y, height]))
             node = node.parent
             if node is None:
                 break
@@ -145,14 +166,14 @@ class Navigator():
         Checks the neighbors of the current grid location we are at and returns the set that are free.
 
         Parameters:
-        loc (np.ndarray): u, v location in the 2D discritized representation
-        visited (set): tuples of u, v locations that have already been visited
+        loc (np.ndarray): row, col location in the 2D discritized representation
+        visited (set): tuples of row, col locations that have already been visited
 
         Returns:
         free (set): set containing tuples of free neighbors.
         """
         free = set()
-        # eight neighboring pixel locations
+        # eight neighboring grid locations
         translations = (np.array([-1, -1]), np.array([-1, 0]), np.array([-1, 1]), np.array([0, 1]), 
                 np.array([0, -1]), np.array([1, -1]), np.array([1, 0]), np.array([1, 1]))
         for translation in translations:
@@ -181,18 +202,18 @@ class Navigator():
         path (list): Nodes containing the (x, y, z) coordinates for the drone to follow along its path
         """
         path_found = False
-        # testing will pass in u, v pixels directly
+        # testing will pass in row, col grid locations directly
         if debug:
-            start_uv = start
-            end_uv = goal
+            start_grid = start
+            end_grid = goal
         else:
-            start_uv = self.meters_to_pixels(start)
-            end_uv = self.meters_to_pixels(goal)
+            start_grid = np.array(self.meters_to_grid(*start))
+            end_grid = np.array(self.meters_to_grid(*goal))
 
         # note that that both nodes and the priority queue operate in u,v space, not x,y space
-        start_node = Node(start_uv)
+        start_node = Node(start_grid)
         # list of partial paths in format of [([partial_path_1], cost_so_far_1, cost_to_go_1), ... ]
-        priority_queue = [([start_node], 0.0, start_node.get_dist(end_uv))]
+        priority_queue = [([start_node], 0.0, start_node.get_dist(end_grid))]
         # set containing all the UV spaces we've visited so far
         visited = set()
 
@@ -204,7 +225,7 @@ class Navigator():
             best_path_tail = best_partial_path[0][-1]
             
             # found goal, extract the path
-            if (best_path_tail.location == end_uv).all():
+            if (best_path_tail.location == end_grid).all():
                 self.extract_path(best_path_tail)
                 path_found = True
                 continue
@@ -221,7 +242,7 @@ class Navigator():
             for neighbor in new_neighbors:
                 # create node instance for each new neighbor to create new partial path
                 new_node = Node(np.array(neighbor), parent=best_path_tail)
-                cost_to_go = new_node.get_dist(end_uv)
+                cost_to_go = new_node.get_dist(end_grid)
                 cost_so_far = best_partial_path[1] + new_node.get_dist(new_node.parent.location)
                 partial_path = best_partial_path[0] + [new_node]
                 priority_queue.append((partial_path, cost_so_far, cost_to_go))
