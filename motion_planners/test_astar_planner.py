@@ -3,7 +3,7 @@ from AStar_planner import Navigator
 
 if __name__ == "__main__":
     test_height = np.zeros((200, 200))
-    test_occupancy = np.array([[1 if np.random.random() < 0.001 else 0 for i in range(200)] for j in range(200)])
+    test_occupancy = np.array([[1 if np.random.random() < .001 else 0 for i in range(200)] for j in range(200)])
 
     NAV = Navigator()
     NAV.min_x, NAV.max_x = -10, 30
@@ -17,6 +17,6 @@ if __name__ == "__main__":
     NAV.debug = True
     while True:
         NAV.odom_callback(NAV.debug_location)
-        if NAV.done_travelling: 
+        if NAV.done_travelling or not NAV.path_found: 
             break
 

@@ -100,13 +100,17 @@ class Navigator():
                 # maybe planner and odometry contorller should be separate ROS nodes
 
                 # determine a path to the next location, sets class variable self.path
-                path_found = self.a_star_planner(next_waypoint, location)
-                if not path_found:
+                self.a_star_planner(next_waypoint, location)
+                # A star failed to find a path to the next waypoint. Stay in place
+                if self.path is None:
                     print("Failed to find path. Staying in place")
+                    self.path_found = False
                     # set something to keep drone in place
+                    return
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
                 self.path_index = 0
+                    
 
             # if we are at the next point in the path, aim for the subsequent point
             if np.all(np.absolute(self.path[self.path_index] - location) < np.array([0.2, 0.2, 0.2])):
@@ -125,8 +129,8 @@ class Navigator():
 
         # all waypoints reached, no need to do anything anymore
         else:
-            if not path_found:
-                print(f"We failed to find paths. We stopped at waypoing {self.waypoint[self.waypoint_index]}")
+            if not self.path_found:
+                print(f"We failed to find paths. We stopped at waypoint {self.waypoints[self.waypoint_index]}")
             else:
                 print("We've hit all waypoints! Should I return to base?")
 
@@ -270,7 +274,7 @@ class Navigator():
         Returns:
         path (list): Nodes containing the (x, y, z) coordinates for the drone to follow along its path
         """
-        path_found = False
+        self.path_found = False
         # testing will pass in row, col grid locations directly
         if debug:
             start_grid = start
@@ -287,7 +291,7 @@ class Navigator():
         visited = set()
 
         # continue iteration process until we find the path or we exhaust the entirety of the search space
-        while priority_queue and not path_found:
+        while priority_queue and not self.path_found:
             #priority queue sorted from worst to best, so best will be at end
             best_partial_path = priority_queue.pop()
             # final node in the best partial path
@@ -296,8 +300,8 @@ class Navigator():
             # found goal, extract the path
             if (best_path_tail.location == end_grid).all():
                 self.extract_path(best_path_tail)
-                path_found = True
-                continue
+                self.path_found = True
+                break
                 
             # check if last node in partial path has already been visited
             if tuple(best_path_tail.location) in visited:
@@ -319,10 +323,9 @@ class Navigator():
             # sort priority queue based on cost_so_far + cost_to_go, reverse to make popping more efficient
             priority_queue.sort(reverse=True, key=lambda x: x[1] + x[2])
         
-        if path_found:
-            return True
-        # no path found, indicate None
-        return False
+        # no path found
+        if not self.path_found:
+            self.path = None
 
 if __name__ == "__main__":
     try:
