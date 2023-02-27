@@ -23,6 +23,7 @@ class Navigator():
         self.waypoint_index = 0
         self.done_travelling = False
         self.path_plan = True
+        self.path_found = True
         self.path = None 
         self.path_index = 0
         # PD controller initializations
@@ -76,7 +77,7 @@ class Navigator():
             location = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z])
 
         # only execute this logic if we haven't hit all waypoints yet
-        if not self.done_travelling :
+        if not self.done_travelling and self.path_found:
             # if we've gotten close enough to the target waypoint, plan for next waypoint
             print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
             if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
@@ -99,7 +100,10 @@ class Navigator():
                 # maybe planner and odometry contorller should be separate ROS nodes
 
                 # determine a path to the next location, sets class variable self.path
-                self.a_star_planner(next_waypoint, location)
+                path_found = self.a_star_planner(next_waypoint, location)
+                if not path_found:
+                    print("Failed to find path. Staying in place")
+                    # set something to keep drone in place
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
                 self.path_index = 0
@@ -121,7 +125,10 @@ class Navigator():
 
         # all waypoints reached, no need to do anything anymore
         else:
-            print("We've hit all waypoints! Should I return to base?")
+            if not path_found:
+                print(f"We failed to find paths. We stopped at waypoing {self.waypoint[self.waypoint_index]}")
+            else:
+                print("We've hit all waypoints! Should I return to base?")
 
 
 
@@ -223,7 +230,7 @@ class Navigator():
         points.reverse()
         self.path = points
 
-    def get_neighbors(self, loc):
+    def get_neighbors(self, loc: np.ndarray) -> set:
         """
         Checks the neighbors of the current grid location we are at and returns the set that are free.
 
