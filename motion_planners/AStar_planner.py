@@ -8,15 +8,23 @@ from node import Node
 
 class Navigator():
     def __init__(self):
+        # debugging parameter
+        self.debug = False
+        self.debug_location = np.array([0, 0, 0])
         # Map inforation intializations
-        self.waypoints = None #list of tuples in order? (x,y,z)
         self.height_map = None
         self.occupancy_grid = None
         self.max_row, self.max_col = 0, 0
         self.min_x, self.max_x = 0, 0
         self.min_y, self.max_y = 0, 0
         self.max_z = None 
-        self.path = None # path returned by the A-star planner
+        # Tracking of which waypoint/point in path we are following
+        self.waypoints = None 
+        self.waypoint_index = 0
+        self.done_travelling = False
+        self.path_plan = True
+        self.path = None 
+        self.path_index = 0
         # PD controller initializations
         self.kp = 1.0
         self.kd = 0
@@ -51,16 +59,70 @@ class Navigator():
         Returns:
         None
         """
+        pass
 
-    def odom_callback(self, msg):
+    def odom_callback(self, msg: any) -> None:
         """
         this callback function will take in the odometry to determine where we are in space. We will use
         these to set the actuations in a PD controller for x, y, and z position
 
         # Considerations: We now have height data. Do we control of the given height data, the laser sensor, 
         combination of both? Theoretically we can penalize both, perhaps weight sensor data much more?
-        """
-        pass
+        """        
+        # determine where the drone is currently located
+        if self.debug:
+            location = self.debug_location
+        else:
+            location = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z])
+
+        # only execute this logic if we haven't hit all waypoints yet
+        if not self.done_travelling :
+            # if we've gotten close enough to the target waypoint, plan for next waypoint
+            print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
+            if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
+                if self.debug:
+                    print("========================================================")
+                    print(f"Drone made it to new waypoint location: {self.waypoints[self.waypoint_index]}")
+                self.waypoint_index += 1
+                self.path_plan = True
+                # condition to check if we've hit all waypoints
+                if self.waypoint_index == len(self.waypoints):
+                    self.done_travelling = True
+                    return
+
+            # if we still haven't hit all waypoints, continue logic execution
+            if self.path_plan:
+                next_waypoint = self.waypoints[self.waypoint_index]
+                print(f"Drone is planning new route to: {next_waypoint}")
+                #####################
+                # maybe stop the drone before we run a_star in case we take a long time?
+                # maybe planner and odometry contorller should be separate ROS nodes
+
+                # determine a path to the next location, sets class variable self.path
+                self.a_star_planner(next_waypoint, location)
+                self.path_plan = False
+                print(f"Drone found the following route: {self.path}")
+                self.path_index = 0
+
+            # if we are at the next point in the path, aim for the subsequent point
+            if np.all(np.absolute(self.path[self.path_index] - location) < np.array([0.2, 0.2, 0.2])):
+                self.path_index += 1
+            path_target = self.path[self.path_index]
+            print(f"path target: {path_target}")
+
+            # fake the drone actually moving around to test logic of the function
+            if self.debug:
+                print("Drone is moving....")
+                self.debug_location = path_target + 0.02*np.random.rand(*path_target.shape)
+                print(f"Drone now at location: {self.debug_location}")
+            else:
+                # Actually pass in velocity commands
+                pass
+
+        # all waypoints reached, no need to do anything anymore
+        else:
+            print("We've hit all waypoints! Should I return to base?")
+
 
 
     def range_callback(self, msg):
@@ -107,7 +169,7 @@ class Navigator():
         """
         pass
 
-    def meters_to_grid(self, x, y):
+    def meters_to_grid(self, x: float, y: float) -> tuple:
         """
         Takes in a location in meters and outputs the discretized grid location.
 
@@ -121,7 +183,7 @@ class Navigator():
         col = (x - self.min_x)/(self.max_x - self.min_x)*self.max_col
         return int(row), int(col)
 
-    def grid_to_meters(self, row, col):
+    def grid_to_meters(self, row: int, col: int) -> tuple:
         """
         Takes in a grid coordinate and returns a location in meters.
 
@@ -135,7 +197,7 @@ class Navigator():
         y = (self.min_y - self.max_y)*row/self.max_row + self.max_y
         return x, y
 
-    def extract_path(self, final_node):
+    def extract_path(self, final_node: Node) -> None:
         """
         Takes in the goal node and iteratively backtracks until we reach the start node
         Sets the extracted path as the class variable self.path
@@ -186,7 +248,7 @@ class Navigator():
                 free.add(tuple(new_loc))
         return free
 
-    def a_star_planner(self, goal, start=np.array([0, 0]), debug=False):
+    def a_star_planner(self, goal: np.ndarray, start=np.array([0, 0]), debug=False) -> bool:
         """
         This function will generate a path from location start to location goal. It will generate a plan
         that avoids obstacles by planning over the provided map in self.map
@@ -207,8 +269,8 @@ class Navigator():
             start_grid = start
             end_grid = goal
         else:
-            start_grid = np.array(self.meters_to_grid(*start))
-            end_grid = np.array(self.meters_to_grid(*goal))
+            start_grid = np.array(self.meters_to_grid(*start[:2]))
+            end_grid = np.array(self.meters_to_grid(*goal[:2]))
 
         # note that that both nodes and the priority queue operate in u,v space, not x,y space
         start_node = Node(start_grid)
@@ -250,14 +312,14 @@ class Navigator():
             # sort priority queue based on cost_so_far + cost_to_go, reverse to make popping more efficient
             priority_queue.sort(reverse=True, key=lambda x: x[1] + x[2])
         
+        if path_found:
+            return True
         # no path found, indicate None
-        return None
+        return False
 
 if __name__ == "__main__":
     try:
         NAV = Navigator()
-        map_path = "../../Task-Planning/something"
-        NAV.load_environmental_map(map_path)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

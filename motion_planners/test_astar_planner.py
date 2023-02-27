@@ -2,8 +2,8 @@ import numpy as np
 from AStar_planner import Navigator
 
 if __name__ == "__main__":
-    test_height = np.zeros((40, 40))
-    test_occupancy = np.array([[1 if np.random.random() < 0.2 else 0 for i in range(40)] for j in range(40)])
+    test_height = np.zeros((200, 200))
+    test_occupancy = np.array([[1 if np.random.random() < 0.001 else 0 for i in range(200)] for j in range(200)])
 
     NAV = Navigator()
     NAV.min_x, NAV.max_x = -10, 30
@@ -11,7 +11,12 @@ if __name__ == "__main__":
     NAV.height_map = test_height
     NAV.occupancy_grid = test_occupancy
     NAV.max_row, NAV.max_col = np.array(NAV.occupancy_grid.shape) - 1
-    start = np.array([-10, 20])
-    goal = np.array([30, -10])
-    NAV.a_star_planner(goal=goal, start=start, debug=False)
-    print(NAV.path)
+
+    NAV.waypoints = [np.array([-5, -7, 2]), np.array([0, 0, 2]), np.array([30, 15, 2])]
+    NAV.debug_location = np.array([2, 2, 2])
+    NAV.debug = True
+    while True:
+        NAV.odom_callback(NAV.debug_location)
+        if NAV.done_travelling: 
+            break
+
