@@ -1,4 +1,6 @@
 import rospy
+import os
+import cv2
 import numpy as np
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -14,6 +16,7 @@ class Navigator():
         # Map inforation intializations
         self.height_map = None
         self.occupancy_grid = None
+        self.ground_dist = 0
         self.max_row, self.max_col = 0, 0
         self.min_x, self.max_x = 0, 0
         self.min_y, self.max_y = 0, 0
@@ -44,9 +47,11 @@ class Navigator():
         Temp = Range
         self.map_sub = rospy.Subscriber('/map_topic', Temp, self.map_callback)
         #actuation
-        self.fly_cmd = None
+        self.fly_cmd = Twist()
         self.z_thresh = 0
 
+        #SET THRESHOLD
+        self.threshold = 1
 
     def load_environmental_map(self, path):
         """
@@ -69,6 +74,12 @@ class Navigator():
 
         # Considerations: We now have height data. Do we control of the given height data, the laser sensor, 
         combination of both? Theoretically we can penalize both, perhaps weight sensor data much more?
+        
+        Parameters:
+        msg (Odometry): odometry object containing the current pose of the drone
+
+        Returns: 
+        None
         """        
         # determine where the drone is currently located
         if self.debug:
@@ -79,7 +90,8 @@ class Navigator():
         # only execute this logic if we haven't hit all waypoints yet
         if not self.done_travelling and self.path_found:
             # if we've gotten close enough to the target waypoint, plan for next waypoint
-            print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
+            if self.debug:
+                print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
             if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
                 if self.debug:
                     print("========================================================")
@@ -94,38 +106,56 @@ class Navigator():
             # if we still haven't hit all waypoints, continue logic execution
             if self.path_plan:
                 next_waypoint = self.waypoints[self.waypoint_index]
-                print(f"Drone is planning new route to: {next_waypoint}")
-                #####################
-                # maybe stop the drone before we run a_star in case we take a long time?
-                # maybe planner and odometry contorller should be separate ROS nodes
 
+                # stop the drone while we path plan
+                print(f"Drone is planning new route to: {next_waypoint}")
+                self.fly_cmd.x=0
+                self.fly_cmd.y=0
+                self.fly_cmd.z=0
+                self.vel_pub.publish(self.fly_cmd)
+                
                 # determine a path to the next location, sets class variable self.path
                 self.a_star_planner(next_waypoint, location)
+
                 # A star failed to find a path to the next waypoint. Stay in place
                 if self.path is None:
                     print("Failed to find path. Staying in place")
                     self.path_found = False
-                    # set something to keep drone in place
+                    # Let the drone just stay in place
+                    self.fly_cmd.x=0
+                    self.fly_cmd.y=0
+                    self.fly_cmd.z=0
+                    self.vel_pub.publish(self.fly_cmd)
                     return
+                
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
-                self.path_index = 0
-                    
+                self.path_index = 0   
 
             # if we are at the next point in the path, aim for the subsequent point
             if np.all(np.absolute(self.path[self.path_index] - location) < np.array([0.2, 0.2, 0.2])):
                 self.path_index += 1
-            path_target = self.path[self.path_index]
+            path_target = self.path[self.path_index] #next node (obj) with location np 
             print(f"path target: {path_target}")
 
-            # fake the drone actually moving around to test logic of the function
+            # fake drone movement if debugging
             if self.debug:
                 print("Drone is moving....")
                 self.debug_location = path_target + 0.02*np.random.rand(*path_target.shape)
                 print(f"Drone now at location: {self.debug_location}")
             else:
-                # Actually pass in velocity commands
-                pass
+                # pass in velocity commands to move drone, implement x, y value PD
+                errors = np.array([location[0] - path_target.location[0], location[1] - path_target.location[1]])                
+                self.fly_cmd.x , self.fly_cmd.y = self.kp*errors + self.kd*self.prev_v
+
+                #if env is too close to drone
+                if self.within_threshold:
+                    self.fly_cmd.z = self.threshold-self.ground_dist
+                # nominal threshold present, control global z value
+                else:
+                    z_error = location[2] - path_target.location[2]
+                    self.fly_cmd.z = self.kp * z_error 
+                self.vel_pub.publish(self.fly_cmd)
 
         # all waypoints reached, no need to do anything anymore
         else:
@@ -136,41 +166,36 @@ class Navigator():
 
 
 
-    def range_callback(self, msg):
+    def range_callback(self, msg) -> None:
         """
         View above docstring. TBD how we interface these two. Perhaps we shoot for the target z provided
         in the waypoint, unless we see we are too close to the ground so we then switch the target_z to be 
         controlled by the laser. Perhaps 1m buffer. I.e., aim to fly 2m above the ground, if we are less than
         1m above the ground, then we let laser control take over. Boolean state?
+
+        Parameters:
+        msg (Range): Range object containing distance to ground data
+
+        Returns:
+        None
         """
-        height = msg.range()
+        self.ground_dist = msg.range
         
         #if height is below threshold, increase the height of the 
-        if height < threshold:
-            self.below_height_threshold = True
-            self.z_thresh = self.fly_cmd.z + np.abs(height-self.threshold) + 0.5 #add amnt current actuation is below threshold + buffer (0.5) to the current z height
-        
-
+        self.within_threshold = self.ground_dist < self.threshold
+            
     def actuation(self,new_fly_cmd):
         '''
         Sets the actuation for the drone.
         Note: make sure threshold is being actuated before odometry -- when moving at high speeds more important to make sure we're being safe before going in right direction
 
-        Params:
-        self: self
+        Parameters:
         new_fly_cmd: Twist()
         '''
         #publish fly command
         self.vel_pub.publish(new_fly_cmd)
         #set self.fly_cmd to the current fly cmds
-        self.fly_cmd = self.new_fly_cmd 
-
-    def initialize_fly_data(self):
-        '''
-        initialize values for flying
-        '''
-        self.fly_cmd = Twist() #initialize to 0?
-
+        self.fly_cmd = self.new_fly_cmd
 
     def map_callback(self, msg):
         """
@@ -190,8 +215,8 @@ class Navigator():
         Returns:
         row, col (int): a coordiante in the discretized state space
         """
-        row = (y - self.max_y)/(self.min_y - self.max_y)*self.max_row
-        col = (x - self.min_x)/(self.max_x - self.min_x)*self.max_col
+        row = (x - self.min_x)/(self.max_x - self.min_x)*self.max_row
+        col = (y - self.min_y)/(self.max_y - self.min_y)*(self.max_col)
         return int(row), int(col)
 
     def grid_to_meters(self, row: int, col: int) -> tuple:
@@ -204,8 +229,8 @@ class Navigator():
         Returns:
         x, y (float): a x, y location in the continuous state space
         """
-        x = (self.max_x - self.min_x)*col/self.max_col + self.min_x
-        y = (self.min_y - self.max_y)*row/self.max_row + self.max_y
+        x = (self.max_x - self.min_x)*row/self.max_row + self.min_x
+        y = (self.max_y - self.min_y)*col/self.max_col + self.min_y
         return x, y
 
     def extract_path(self, final_node: Node) -> None:
@@ -328,8 +353,32 @@ class Navigator():
             self.path = None
 
 if __name__ == "__main__":
+    path = '../occupancy_grids/images/rolling_hills_map_10.png'
+    occupancy_image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2GRAY)
+    xmin, xmax = -60, 60
+    ymin, ymax = -60, 60
+
     try:
+        # create the navigator object, pass in important mapping information
         NAV = Navigator()
+        NAV.occupancy_grid = occupancy_image
+        NAV.max_row, NAV.max_col = np.array(NAV.occupancy_grid.shape) - 1
+        NAV.min_x, NAV.max_x = xmin, xmax
+        NAV.min_y, NAV.max_y = ymin, ymax
+
+        # generate some waypoints to follow
+        free_grid = np.transpose(np.where(occupancy_image == 0))
+        rows = np.random.choice(free_grid.shape[0], 5, replace=False)
+        waypoints_grid = free_grid[rows, :]
+
+        # convert the waypoints into cartesian space
+        waypoints = []
+        for waypoint in waypoints_grid:
+            x, y = NAV.grid_to_meters(waypoint[0], waypoint[1])
+            waypoints.append((x, y, 11))
+        NAV.waypoints = waypoints
+
+        rospy.init_node('AStar_planner', anonymous=True)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
