@@ -109,9 +109,9 @@ class Navigator():
 
                 # stop the drone while we path plan
                 print(f"Drone is planning new route to: {next_waypoint}")
-                self.fly_cmd.x=0
-                self.fly_cmd.y=0
-                self.fly_cmd.z=0
+                self.fly_cmd.linear.x=0
+                self.fly_cmd.linear.y=0
+                self.fly_cmd.linear.z=0
                 self.vel_pub.publish(self.fly_cmd)
                 
                 # determine a path to the next location, sets class variable self.path
@@ -122,9 +122,9 @@ class Navigator():
                     print("Failed to find path. Staying in place")
                     self.path_found = False
                     # Let the drone just stay in place
-                    self.fly_cmd.x=0
-                    self.fly_cmd.y=0
-                    self.fly_cmd.z=0
+                    self.fly_cmd.linear.x=0
+                    self.fly_cmd.linear.y=0
+                    self.fly_cmd.linear.z=0
                     self.vel_pub.publish(self.fly_cmd)
                     return
                 
@@ -146,15 +146,15 @@ class Navigator():
             else:
                 # pass in velocity commands to move drone, implement x, y value PD
                 errors = np.array([location[0] - path_target.location[0], location[1] - path_target.location[1]])                
-                self.fly_cmd.x , self.fly_cmd.y = self.kp*errors + self.kd*self.prev_v
+                self.fly_cmd.linear.x , self.fly_cmd.linear.y = self.kp*errors + self.kd*self.prev_v
 
                 #if env is too close to drone
                 if self.within_threshold:
-                    self.fly_cmd.z = self.threshold-self.ground_dist
+                    self.fly_cmd.linear.z = self.threshold-self.ground_dist
                 # nominal threshold present, control global z value
                 else:
                     z_error = location[2] - path_target.location[2]
-                    self.fly_cmd.z = self.kp * z_error 
+                    self.fly_cmd.linear.z = self.kp * z_error 
                 self.vel_pub.publish(self.fly_cmd)
 
         # all waypoints reached, no need to do anything anymore
