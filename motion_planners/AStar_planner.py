@@ -2,6 +2,7 @@ import rospy
 import os
 import cv2
 import numpy as np
+import skimage.measure
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
@@ -9,29 +10,30 @@ from node import Node
 
 
 class Navigator():
-    def __init__(self):
+    def __init__(self, occupancy_grid, xmin, xmax, ymin, ymax, waypoints):
         # debugging parameter
         self.debug = False
         self.debug_location = np.array([0, 0, 0])
         # Map inforation intializations
-        self.height_map = None
-        self.occupancy_grid = None
+        self.occupancy_grid = occupancy_grid
         self.ground_dist = 0
-        self.max_row, self.max_col = 0, 0
-        self.min_x, self.max_x = 0, 0
-        self.min_y, self.max_y = 0, 0
+        self.flight_height = 10
+        self.max_row, self.max_col = np.array(self.occupancy_grid.shape) - 1
+        self.min_x, self.max_x = xmin, xmax
+        self.min_y, self.max_y = ymin, ymax
         self.max_z = None 
         # Tracking of which waypoint/point in path we are following
-        self.waypoints = None 
+        self.waypoints = waypoints 
         self.waypoint_index = 0
+        self.next_waypoint = True
         self.done_travelling = False
         self.path_plan = True
         self.path_found = True
         self.path = None 
         self.path_index = 0
         # PD controller initializations
-        self.kp = 1.0
-        self.kd = 0
+        self.kp = 1.5
+        self.kd = 0.5
         self.max_v = 1
         self.prev_v = np.array([0, 0])
         self.below_height_threshold = False
@@ -52,6 +54,7 @@ class Navigator():
 
         #SET THRESHOLD
         self.threshold = 1
+        self.initialize_hover = True
 
     def load_environmental_map(self, path):
         """
@@ -87,17 +90,31 @@ class Navigator():
         else:
             location = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z])
 
+        if self.initialize_hover:
+            # bring the drone up to the flying plane before planning
+            self.fly_cmd.linear.x=0
+            self.fly_cmd.linear.y=0
+            self.fly_cmd.linear.z=1
+            self.vel_pub.publish(self.fly_cmd)
+            
+            if location[2] >= self.flight_height:
+                self.initialize_hover = False
+            return
+
         # only execute this logic if we haven't hit all waypoints yet
         if not self.done_travelling and self.path_found:
             # if we've gotten close enough to the target waypoint, plan for next waypoint
             if self.debug:
                 print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
-            if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
+
+            # if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
+            if self.next_waypoint:
                 if self.debug:
                     print("========================================================")
                     print(f"Drone made it to new waypoint location: {self.waypoints[self.waypoint_index]}")
                 self.waypoint_index += 1
                 self.path_plan = True
+                self.next_waypoint = False
                 # condition to check if we've hit all waypoints
                 if self.waypoint_index == len(self.waypoints):
                     self.done_travelling = True
@@ -130,13 +147,17 @@ class Navigator():
                 
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
+                self.vis_paths(self.path)
                 self.path_index = 0   
 
             # if we are at the next point in the path, aim for the subsequent point
             if np.all(np.absolute(self.path[self.path_index] - location) < np.array([0.2, 0.2, 0.2])):
                 self.path_index += 1
+                if self.path_index == len(self.path):
+                    self.next_waypoint = True
+                    return
             path_target = self.path[self.path_index] #next node (obj) with location np 
-            print(f"path target: {path_target}")
+            # print(f"path target: {path_target}")
 
             # fake drone movement if debugging
             if self.debug:
@@ -145,16 +166,20 @@ class Navigator():
                 print(f"Drone now at location: {self.debug_location}")
             else:
                 # pass in velocity commands to move drone, implement x, y value PD
-                errors = np.array([location[0] - path_target.location[0], location[1] - path_target.location[1]])                
-                self.fly_cmd.linear.x , self.fly_cmd.linear.y = self.kp*errors + self.kd*self.prev_v
+                errors = path_target - location             
+                self.fly_cmd.linear.x , self.fly_cmd.linear.y = self.kp*errors[:-1] - self.kd*self.prev_v
 
                 #if env is too close to drone
                 if self.within_threshold:
+                    print('violated threshold')
                     self.fly_cmd.linear.z = self.threshold-self.ground_dist
                 # nominal threshold present, control global z value
                 else:
-                    z_error = location[2] - path_target.location[2]
+                    z_error = path_target[2] - location[2]
                     self.fly_cmd.linear.z = self.kp * z_error 
+                
+                # set previous velocity for D term in PD
+                self.prev_v = np.array(self.fly_cmd.linear.x, self.fly_cmd.linear.y)
                 self.vel_pub.publish(self.fly_cmd)
 
         # all waypoints reached, no need to do anything anymore
@@ -184,7 +209,7 @@ class Navigator():
         #if height is below threshold, increase the height of the 
         self.within_threshold = self.ground_dist < self.threshold
             
-    def actuation(self,new_fly_cmd):
+    def actuation(self, new_fly_cmd):
         '''
         Sets the actuation for the drone.
         Note: make sure threshold is being actuated before odometry -- when moving at high speeds more important to make sure we're being safe before going in right direction
@@ -250,9 +275,8 @@ class Navigator():
         while True:
             row, col = node.location[0], node.location[1]
             # extract the height from the height map, +2 for buffer
-            height = self.height_map[row, col] + 2
             x, y = self.grid_to_meters(row, col)
-            points.append(np.array([x, y, height]))
+            points.append(np.array([x, y, self.flight_height]))
             node = node.parent
             if node is None:
                 break
@@ -352,33 +376,59 @@ class Navigator():
         if not self.path_found:
             self.path = None
 
+    def vis_paths(self, path):
+        path_grid = np.array([self.meters_to_grid(point[0], point[1]) for point in path])
+        rows, cols = path_grid[:, 0], path_grid[:, 1]
+        new_grid = self.occupancy_grid
+        new_grid[rows, cols] = 100
+        cv2.imshow('new grid', new_grid)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+# For testing purposes
+def grid_to_meters(max_x: int, min_x: int, max_y: int, min_y: int, row: int, col: int) -> tuple:
+    """
+    Takes in a grid coordinate and returns a location in meters.
+
+    Parameters:
+    row, col (int): a row, col location in the discretized state space
+
+    Returns:
+    x, y (float): a x, y location in the continuous state space
+    """
+    x = (max_x - min_x)*row/max_row + min_x
+    y = (max_y - min_y)*col/max_col + min_y
+    return x, y
+
 if __name__ == "__main__":
     path = '../occupancy_grids/images/rolling_hills_map_10.png'
     occupancy_image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2GRAY)
-    xmin, xmax = -60, 60
-    ymin, ymax = -60, 60
+    cv2.imshow("original occupancy", occupancy_image)
+    reduced_occupancy = skimage.measure.block_reduce(occupancy_image, (5, 5), np.max)
+    cv2.imshow('reduced occupancy', reduced_occupancy)
+    dilated_ococupancy = cv2.dilate(reduced_occupancy, np.ones((11, 11), np.uint8))
+    cv2.imshow('dilated occupancy', dilated_ococupancy)
+    cv2.waitKey(30000)
+
+    xmin, xmax = -100, 100
+    ymin, ymax = -100, 100
+    max_row, max_col = np.array(dilated_ococupancy.shape) - 1
+
+    # generate some waypoints to follow
+    free_grid = np.transpose(np.where(dilated_ococupancy == 0))
+    rows = np.random.choice(free_grid.shape[0], 5, replace=False)
+    waypoints_grid = free_grid[rows, :]
+
+    # convert the waypoints into cartesian space
+    waypoints = []
+    for waypoint in waypoints_grid:
+        x, y = grid_to_meters(xmax, xmin, ymax, ymin, waypoint[0], waypoint[1])
+        waypoints.append((x, y, 10))
 
     try:
         # create the navigator object, pass in important mapping information
-        NAV = Navigator()
-        NAV.occupancy_grid = occupancy_image
-        NAV.max_row, NAV.max_col = np.array(NAV.occupancy_grid.shape) - 1
-        NAV.min_x, NAV.max_x = xmin, xmax
-        NAV.min_y, NAV.max_y = ymin, ymax
-
-        # generate some waypoints to follow
-        free_grid = np.transpose(np.where(occupancy_image == 0))
-        rows = np.random.choice(free_grid.shape[0], 5, replace=False)
-        waypoints_grid = free_grid[rows, :]
-
-        # convert the waypoints into cartesian space
-        waypoints = []
-        for waypoint in waypoints_grid:
-            x, y = NAV.grid_to_meters(waypoint[0], waypoint[1])
-            waypoints.append((x, y, 11))
-        NAV.waypoints = waypoints
-
         rospy.init_node('AStar_planner', anonymous=True)
+        NAV = Navigator(dilated_ococupancy, xmin, xmax, ymin, ymax, waypoints)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
