@@ -32,8 +32,8 @@ class Navigator():
         self.path = None 
         self.path_index = 0
         # PD controller initializations
-        self.kp = 1.5
-        self.kd = 0.5
+        self.kp = 1.0
+        self.kd = 0
         self.max_v = 1
         self.prev_v = np.array([0, 0])
         self.below_height_threshold = False
@@ -308,7 +308,7 @@ class Navigator():
                 free.add(tuple(new_loc))
         return free
 
-    def a_star_planner(self, goal: np.ndarray, start=np.array([0, 0]), debug=False) -> bool:
+    def a_star_planner(self, goal: np.ndarray, start=np.array([0, 0]), debug=False) -> None:
         """
         This function will generate a path from location start to location goal. It will generate a plan
         that avoids obstacles by planning over the provided map in self.map
@@ -406,9 +406,8 @@ if __name__ == "__main__":
     cv2.imshow("original occupancy", occupancy_image)
     reduced_occupancy = skimage.measure.block_reduce(occupancy_image, (5, 5), np.max)
     cv2.imshow('reduced occupancy', reduced_occupancy)
-    dilated_ococupancy = cv2.dilate(reduced_occupancy, np.ones((11, 11), np.uint8))
+    dilated_ococupancy = cv2.dilate(reduced_occupancy, np.ones((7, 7), np.uint8))
     cv2.imshow('dilated occupancy', dilated_ococupancy)
-    cv2.waitKey(30000)
 
     xmin, xmax = -100, 100
     ymin, ymax = -100, 100
