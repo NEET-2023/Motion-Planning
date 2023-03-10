@@ -52,6 +52,9 @@ class Navigator():
         self.fly_cmd = Twist()
         self.z_thresh = 0
 
+        #rotation
+        self.prev_angle = 0
+
         #SET THRESHOLD
         self.threshold = 1
         self.initialize_hover = True
@@ -189,6 +192,27 @@ class Navigator():
             else:
                 print("We've hit all waypoints! Should I return to base?")
 
+    def face_forward_control(self, velocity_vector, pose):
+        '''
+        Controller to make the drone face in the direction of the next waypoint
+
+        inp: velocity_vector, np.array[x_component,y_component]
+        out: how much the drone should rotate
+        '''
+
+        #get current angle of the drone
+        front_angle = pose.pose.orientation.z
+        #get angle of velocity vector to vector the angles are defined by 
+        a = np.array([1,0])
+        velocity_angle = np.arccos(np.dot(a,velocity_vector)/(np.linalg.norm(a)*np.linalg.norm(velocity_vector)))
+        #angle to rotate
+        rotation_angle = velocity_angle - front_angle
+        #Control
+        self.fly_cmd.angular.z = self.kp*rotation_angle - self.kd*self.prev_angle
+        #prior angular velocity?
+        self.prev_angle = 0
+        #publish angle command
+        self.vel_pub.publish(self.fly_cmd)
 
 
     def range_callback(self, msg) -> None:
