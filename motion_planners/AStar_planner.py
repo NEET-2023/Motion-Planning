@@ -400,6 +400,105 @@ class Navigator():
         if not self.path_found:
             self.path = None
 
+    def rrt_planner(self, goal: np.ndarray, start=np.array([0, 0])) -> None:
+        """
+        This function will generate a path from location start to location goal by using RRT. It will 
+        generate a plan that avoids obstacles by planning over the provided map in self.map. Stores the
+        path in self.path.
+
+        Parameters: 
+        start (np.ndarray): x, y location the drone is starting from.
+        goal (np.ndarray): x, y location the drone is to arrive
+
+        Returns:
+        None
+        """
+        start = start[:2]
+        goal =goal[:2]
+        path_found = False
+        valid_set = {Node(start)}
+        free_grid_points = np.argwhere(self.occupancy_grid == 0)
+        d = 5
+        tol = d*1.0
+
+        # Repeat RRT graph generation until goal reached
+        while not path_found:
+            # genereate random point in space, goal biased-parameter
+            if np.random.uniform() < 0.0:
+                pos_rand = goal
+                goal_sampled = True
+            else:
+                goal_sampled = False
+                rand_int = np.random.randint(free_grid_points.shape[0])
+                row, col = free_grid_points[rand_int:rand_int+1].flatten()
+                # x, y coordinate of the grid location
+                pos_rand = np.array(self.grid_to_meters(row, col))
+
+            # find the closet node in valid_set to this random point
+            closest = min(valid_set, key=lambda x: x.get_dist(pos_rand))
+            old_pos = closest.location
+
+            if goal_sampled and closest.get_dist(goal) < d:
+                # super close to the goal, allow use to select the goal as the new position
+                new_pos = goal
+            else:
+                # get unit vector from closest to random point
+                unit_vec = closest.get_vec(pos_rand)
+                # step in vector direction by amount d
+                new_pos = closest.location + unit_vec*d
+
+            # if collides, ignore, else add to valid set and create parent child dependency
+            if self.collision_detector(old_pos, new_pos, d):
+                continue
+            new_node = Node(new_pos, parent=closest)
+            valid_set.add(new_node)
+
+            # if in goal region, path_found = True, else, repeat
+            if np.linalg.norm(new_pos - goal) < tol:
+                path_found = True
+                print('path found')
+                self.extract_path_RRT(new_node)
+
+    def extract_path_RRT(self, final_node):
+        node = final_node
+        points = []
+        while True:
+            points.append((node.location[0], node.location[1], self.flight_height))
+            node = node.parent
+            if node is None:
+                break
+        points.reverse()
+        self.path = points
+
+    def collision_detector(self, curr: np.ndarray, dest: np.ndarray, d: float) -> bool:
+        '''
+        Given a start position and a destination returns if the current path subsection is in collision
+
+        Parameters: 
+        curr (np.ndarray): The start of the path we are checking collisions for
+        dest (np.npdarray): The location we'd like to connect to the tree 
+        d (float): the step size used for RRT
+
+        Returns: 
+        collision (bool): if path is in collision with obstacle
+        '''
+        # get direcitonal normlized vector
+        sd_unit_vec = (dest-curr)/np.linalg.norm(dest-curr)
+        collision = False
+        pt = curr
+
+        # iterate through all possible points spaced a distance step apart
+        step = d/10. # WILL NEED TUNING
+
+        # while current pt is not within a viable range of the destination
+        while not collision and np.linalg.norm(dest-pt) > step:
+            # update the point location, create points along line from curr to dest
+            pt = pt + step*sd_unit_vec
+            # check if point is in collision
+            pxls = self.meters_to_grid(*pt)
+            collision = not self.occupancy_grid[pxls[0], pxls[1]] == 0
+        return collision
+
     def vis_paths(self, path):
         path_grid = np.array([self.meters_to_grid(point[0], point[1]) for point in path])
         rows, cols = path_grid[:, 0], path_grid[:, 1]
