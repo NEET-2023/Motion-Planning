@@ -3,6 +3,7 @@ import os
 import cv2
 import numpy as np
 import skimage.measure
+from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
@@ -35,7 +36,7 @@ class Navigator():
         self.kp = 1.0
         self.kd = 0
         self.max_v = 1
-        self.prev_v = np.array([0, 0])
+        self.prev_v_world = np.array([0, 0])
         self.below_height_threshold = False
         # May or may not control z independently. TBD
         self.max_vz = 1
@@ -53,7 +54,7 @@ class Navigator():
         self.z_thresh = 0
 
         #rotation
-        self.prev_angle = 0
+        self.prev_angular_z = 0
 
         #SET THRESHOLD
         self.threshold = 1
@@ -169,8 +170,17 @@ class Navigator():
                 print(f"Drone now at location: {self.debug_location}")
             else:
                 # pass in velocity commands to move drone, implement x, y value PD
-                errors = path_target - location             
-                self.fly_cmd.linear.x , self.fly_cmd.linear.y = self.kp*errors[:-1] - self.kd*self.prev_v
+                errors = path_target - location 
+                # calculate velocity vector with respect to the world frame
+                vx_world, vy_world = self.kp*errors[:-1] - self.kd*self.prev_v_world
+                # convert velocity in world frame to drone frame
+                quaternion = msg.pose.pose.orientation
+                r = R.from_quat([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
+                yaw_world = r.as_euler('xyz')[2] % (2*np.pi) # put between (0, 2*pi)
+                v_drone = np.array([vx_world*np.cos(yaw_world) + vy_world*np.sin(yaw_world), 
+                                    -vx_world*np.sin(yaw_world) + vy_world*np.cos(yaw_world)])
+                self.fly_cmd.linear.x, self.fly_cmd.linear.y = v_drone
+                # self.fly_cmd.linear.x , self.fly_cmd.linear.y = self.kp*errors[:-1] - self.kd*self.prev_v_world
 
                 #if env is too close to drone
                 if self.within_threshold:
@@ -182,8 +192,14 @@ class Navigator():
                     self.fly_cmd.linear.z = self.kp * z_error 
                 
                 # set previous velocity for D term in PD
-                self.prev_v = np.array(self.fly_cmd.linear.x, self.fly_cmd.linear.y)
+                # self.prev_v_world = np.array(self.fly_cmd.linear.x, self.fly_cmd.linear.y)
+                self.prev_v_world = v_drone
+                self.face_forward_control(np.array([vx_world, vy_world]), yaw_world)
                 self.vel_pub.publish(self.fly_cmd)
+                # print(f"v_x: {self.fly_cmd.linear.x}")
+                # print(f"v_y: {self.fly_cmd.linear.y}")
+                # print(f"v_z: {self.fly_cmd.linear.z}")
+                # print(f"omega_z: {self.fly_cmd.angular.z}")
 
         # all waypoints reached, no need to do anything anymore
         else:
@@ -192,27 +208,31 @@ class Navigator():
             else:
                 print("We've hit all waypoints! Should I return to base?")
 
-    def face_forward_control(self, velocity_vector, pose):
+    def face_forward_control(self, velocity, yaw):
         '''
         Controller to make the drone face in the direction of the next waypoint
 
-        inp: velocity_vector, np.array[x_component,y_component]
+        inp: velocity, np.array[x_component,y_component]
         out: how much the drone should rotate
         '''
-
+        # print(velocity)
         #get current angle of the drone
-        front_angle = pose.pose.orientation.z
+        front_angle = yaw
         #get angle of velocity vector to vector the angles are defined by 
         a = np.array([1,0])
-        velocity_angle = np.arccos(np.dot(a,velocity_vector)/(np.linalg.norm(a)*np.linalg.norm(velocity_vector)))
+        # make velocity_angle pos or neg depending on cross product result
+        velocity_angle = np.sign(np.cross(a, velocity))*np.arccos(np.dot(a, velocity)/(np.linalg.norm(a)*np.linalg.norm(velocity))) % (2*np.pi)
         #angle to rotate
         rotation_angle = velocity_angle - front_angle
+        # print('yaw', yaw)
+        # print('velocity_angle', velocity_angle)
+        # print('rotation angle:', rotation_angle)
         #Control
-        self.fly_cmd.angular.z = self.kp*rotation_angle - self.kd*self.prev_angle
+        self.fly_cmd.angular.z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
         #prior angular velocity?
-        self.prev_angle = 0
+        self.prev_angular_z = self.fly_cmd.angular.z
         #publish angle command
-        self.vel_pub.publish(self.fly_cmd)
+        # self.vel_pub.publish(self.fly_cmd)
 
 
     def range_callback(self, msg) -> None:
@@ -526,11 +546,11 @@ def grid_to_meters(max_x: int, min_x: int, max_y: int, min_y: int, row: int, col
 if __name__ == "__main__":
     path = '../occupancy_grids/images/rolling_hills_map_10.png'
     occupancy_image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2GRAY)
-    cv2.imshow("original occupancy", occupancy_image)
+    # cv2.imshow("original occupancy", occupancy_image)
     reduced_occupancy = skimage.measure.block_reduce(occupancy_image, (5, 5), np.max)
-    cv2.imshow('reduced occupancy', reduced_occupancy)
+    # cv2.imshow('reduced occupancy', reduced_occupancy)
     dilated_ococupancy = cv2.dilate(reduced_occupancy, np.ones((7, 7), np.uint8))
-    cv2.imshow('dilated occupancy', dilated_ococupancy)
+    # cv2.imshow('dilated occupancy', dilated_ococupancy)
 
     xmin, xmax = -100, 100
     ymin, ymax = -100, 100
