@@ -3,12 +3,13 @@ import os
 import cv2
 import numpy as np
 import skimage.measure
+import matplotlib.pyplot as plt
+import path_smoothing
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
 from node import Node
-
 
 class Navigator():
     def __init__(self, occupancy_grid, xmin, xmax, ymin, ymax, waypoints):
@@ -148,7 +149,21 @@ class Navigator():
                     self.fly_cmd.linear.z=0
                     self.vel_pub.publish(self.fly_cmd)
                     return
+
                 
+                b_path, _, _ = path_smoothing.b_spline_path(self.path, 50, s=1)
+
+                # PATH SMOOTHING DEMONSTRATION
+                # print(b_path)
+
+                # x_smooth_val = [x[0] for x in b_path]
+                # y_smooth_val = [x[1] for x in b_path]
+                # plt.plot(x_smooth_val, y_smooth_val, '-b', label="Interpolated B-Spline path")
+                # plt.title("B-Spline interpolation")
+                # plt.plot([x[0] for x in self.path], [x[1] for x in self.path], '-g', label="way points")
+                # plt.legend()
+                # plt.show()
+
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
                 self.vis_paths(self.path)
