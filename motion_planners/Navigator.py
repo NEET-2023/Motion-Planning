@@ -38,8 +38,8 @@ class Navigator():
         # Planner
         self.planner = Planners(algo, world_dims, occupancy_grid, self.flight_height)
         # Low Level Controller
-        # self.llc = PD()
-        self.llc = PurePursuit()
+        self.llc = PD()
+        # self.llc = PurePursuit()
         # PD controller initializations
         self.kp = 1.0
         self.kd = 0
@@ -181,10 +181,10 @@ class Navigator():
             self.prev_v_world = v_world
 
             self.face_forward_control(v_world, pose)
-            print(f"v_x: {self.fly_cmd.linear.x}")
-            print(f"v_y: {self.fly_cmd.linear.y}")
+            # print(f"v_x: {self.fly_cmd.linear.x}")
+            # print(f"v_y: {self.fly_cmd.linear.y}")
             # print(f"v_z: {self.fly_cmd.linear.z}")
-            print(f"omega_z: {self.fly_cmd.angular.z}")
+            # print(f"omega_z: {self.fly_cmd.angular.z}")
 
         # all waypoints reached, no need to do anything anymore
         else:
@@ -226,7 +226,7 @@ class Navigator():
         #prior angular velocity?
         self.prev_angular_z = self.fly_cmd.angular.z
         #publish angle command
-        # self.vel_pub.publish(self.fly_cmd)
+        self.vel_pub.publish(self.fly_cmd)
 
     def range_callback(self, msg) -> None:
         """

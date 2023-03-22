@@ -14,9 +14,12 @@ class PD():
         self.prev_v_world = np.array([0, 0, 0])
         # controller constraints
         self.threshold = threshold
+        self.ground_dist = 0
         self.within_threshold = False
+        # controller type
+        self.type = "PD"
 
-    def pd(self):
+    def actuate(self):
         # Extract the pose from the provided class variable
         location = np.array([self.pose.position.x, self.pose.position.y, self.pose.position.z])
 
@@ -25,7 +28,7 @@ class PD():
             self.path_index += 1
             # We are at the end of the path, indicate so and return 0 veloity command
             if self.path_index == len(self.path):
-                return True, (0, 0, 0)
+                return True, np.array([0 ,0, 0])
         # next location within the path to reach 
         path_target = self.path[self.path_index] 
         # print(f"path target: {path_target}")

@@ -15,37 +15,45 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
 class PurePursuit():
-    """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
+    """ 
+    Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
     """
-    def __init__(self, trajectory, odom, pose):
+    def __init__(self, path=None, odom=None, pose=None, threshold=0):
         self.fly_cmd = Twist()
         self.lookahead = 1.5
-        self.speed = 1
-        self.trajectory  = trajectory
-        self.odom = odom
-        self.waypoint_segments = None
+        self.speed = 0.5
+        self.path = path
+        self.path_segments = None
+        self.pose = pose
+        # PD Controller Initializations
+        self.kp = 1
+        self.kd = 0
+        self.prev_v_world = np.array([0, 0, 0])
+        # controller constraints
+        self.threshold = threshold
+        self.ground_dist = 0
+        self.within_threshold = False
 
-        #Publish Topics
-        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        # Controller type
+        self.type = "PP"
 
         # Published Topics for Debugging Purposes
         self.point_pub = rospy.Publisher("/closest_trajectory_point", PointStamped, queue_size=1)
         self.curr_pose_pub = rospy.Publisher("/guess_pose", PointStamped, queue_size=1)
+        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.stop = False
 
         # Error Publisher for debugging
         self.real_pose_sub = rospy.Subscriber("/real_pose", Odometry, self.realPose_callback, queue_size=1)
         self.error_pub = rospy.Publisher("/error", Float32, queue_size=10)
 
-
-
     # Compute Euclidean distance between 2 points
     def distance(self, point1, point2):
-        return np.linalg.norm(point2-point1)
+        return np.linalg.norm(point2 - point1)
 
     def minimum_distance(self, point):
         def helper(segment):
-            start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])
+            start, end = np.array([segment[0], segment[1]]), np.array([segment[2], segment[3]])
 
             # Return minimum distance between line segment (start-end) and point p
             l2 = self.distance(start, end)**2
@@ -64,12 +72,6 @@ class PurePursuit():
             return self.distance(point, projection)
         return helper
 
-    def initialize_twist_data(self):
-        self.fly_cmd.linear.x=0
-        self.fly_cmd.linear.y=0
-        self.fly_cmd.linear.z=1
-        return drive_data
-
     def createPoint(self, point):
         point_msg = PointStamped()
         point_msg.header.stamp = rospy.Time.now()
@@ -78,37 +80,42 @@ class PurePursuit():
         point_msg.point.y = point[1]
         return point_msg
 
-    def pose_update_callback(self, raw_pose):
-        '''
-        runs pure pursuit
-        inp: pose (pose obj)
-        '''
-        if self.waypoint_segments is None:
+    def actuate(self):
+        """
+        Runs the pure pursuit algorithm to determine the necessary velocity commands in the world frame
+        
+        Parameters:
+        None
+
+        Returns:
+        v_cmd (np.ndarray): the velocity command in the world frame
+        """
+        if self.path_segments is None:
             #no waypoints/trajectory to follow
+            print('No Trajectory')
             return
 
         if self.stop: 
-            self.vel_pub.publish(self.create_stop_msg())
-            return
+            return True, np.array([0, 0, 0])
 
-        euler = euler_from_quaternion([raw_pose.orientation.x, raw_pose.orientation.y, raw_pose.orientation.z, raw_pose.orientation.w])
-        pose = [ raw_pose.position.x, raw_pose.position.y, euler[-1]]
+        euler = euler_from_quaternion([self.pose.orientation.x, self.pose.orientation.y, self.pose.orientation.z, self.pose.orientation.w])
+        pose = [self.pose.position.x, self.pose.position.y, euler[2]]
 
         #obtain waypoint segments from waypoint trajectory dots
-        self.waypoint_segments = np.array([[self.trajectory[i][0], self.trajectory[i][1], self.trajectory[i+1][0], self.trajectory[i+1][1]] for i in range(len(self.trajectory.points)-1)])
+        # self.path_segments = np.array([[self.path[i][0], self.path[i][1], self.path[i+1][0], self.path[i+1][1]] for i in range(len(self.path) - 1)])
 
         # FOR DUBUGGING: current robot position
         point = np.array(pose[:-1])
         self.curr_pose_pub.publish(self.createPoint(point))
 
         # compute minimum distances from robot to each segment of the trajectory
-        min_distances = np.apply_along_axis(self.minimum_distance(point), 1, self.waypoint_segments)
+        min_distances = np.apply_along_axis(self.minimum_distance(point), 1, self.path_segments)
         min_index = np.argmin(min_distances)
 
-        forward_trajectory = self.waypoint_segments[min_index:][::-1]
-        desired_point = self.waypoint_segments[min_index][2:] # default desired point as endpoint of closest line segment of trajectory
+        forward_path = self.path_segments[min_index:][::-1]
+        desired_point = self.path_segments[min_index][2:] # default desired point as endpoint of closest line segment of trajectory
 
-        for i, segment in enumerate(forward_trajectory):
+        for i, segment in enumerate(forward_path):
             # start and end points of each segment 
             start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])
 
@@ -116,7 +123,7 @@ class PurePursuit():
 
             a = np.dot(V,V)
             b = 2 * np.dot(V, start - point)
-            c = np.dot(start,start) + np.dot(point,point) - 2 * np.dot(start,point) - self.lookahead**2
+            c = np.dot(start, start) + np.dot(point, point) - 2 * np.dot(start, point) - self.lookahead**2
 
             # Discriminant
             disc = b**2 - 4*a*c
@@ -133,7 +140,7 @@ class PurePursuit():
 
             t = max(0, min(1, - b / (2 * a)))
             desired_point = start + t * V
-            min_index += len(forward_trajectory) - i - 1
+            min_index += len(forward_path) - i - 1
             break
 
         #FOR DEBUGGING
@@ -143,35 +150,40 @@ class PurePursuit():
         new_yaw = np.arctan2(path_vector[1],path_vector[0])
         eta = new_yaw - pose[-1] 
 
-        #obtain x and y components of eta to command movement
-        self.fly_cmd.linear.x = V*np.cos(eta)
-        self.fly_cmd.linear.y = V*np.sin(eta)
+        # obtain x and y components of eta to command movement
+        # hard code flight speed for now (1)
+        v_x = self.speed*np.cos(eta)
+        v_y = self.speed*np.sin(eta)
 
-        self.vel_pub.publish(self.fly_cmd)
+        self.path_segments = self.path_segments[min_index:]
 
-        self.waypoint_segments = self.waypoint_segments[min_index:]
-
-        if (len(self.waypoint_segments)==1 and self.distance(point, self.waypoint_segments[-1][2:]) < self.lookahead):
-            self.drive_pub.publish(self.create_stop_msg())
+        if (len(self.path_segments) == 1 and self.distance(point, self.path_segments[-1][2:]) < self.lookahead):
             self.stop = True
+            return True, np.array([0, 0, 0])
 
         if eta < (np.pi/6): self.lookahead = 1.5
         else: self.lookahead = 0.5
 
-    def create_stop_msg(self):
-        self.fly_cmd.linear.x=0
-        self.fly_cmd.linear.y=0
-        self.fly_cmd.linear.z=0
-        return self.fly_cmd
+        #if env is too close to drone
+        if self.within_threshold:
+            print('violated threshold')
+            v_z = self.threshold-self.ground_dist
+        # nominal threshold present, control global z value
+        else:
+            # fix hard coding later
+            z_error = 10 - self.pose.position.z
+            v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
+
+        return False, (v_x, v_y, v_z)
 
     def realPose_callback(self, msg):
-        if self.waypoint_segments is None or self.stop:
+        if self.path_segments is None or self.stop:
             return
 
         real_pose = msg.pose.pose.position
         real_pose_position = [real_pose.x, real_pose.y]
-        rospy.loginfo("%s", np.array([list(point) for point in self.trajectory.points]))
-        distances = np.apply_along_axis(lambda x: self.distance(x, real_pose_position), 1, np.array([list(point) for point in self.trajectory.points]))
+        rospy.loginfo("%s", np.array([list(point) for point in self.path]))
+        distances = np.apply_along_axis(lambda x: self.distance(x, real_pose_position), 1, np.array([list(point) for point in self.path]))
         min_distance_index = np.argmin(distances)
         self.error_pub.publish(min(distances))
 
