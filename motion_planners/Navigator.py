@@ -5,10 +5,11 @@ import numpy as np
 import skimage.measure
 import sys, os
 from scipy.spatial.transform import Rotation as R
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point32
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
-from node import Node
+from visualization_msgs.msg import Marker
+from std_msgs.msg import Header
 from planners import Planners
 sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning')
 from low_level_controller.PD import PD
@@ -63,6 +64,9 @@ class Navigator():
         self.threshold = 1
         self.initialize_hover = True
 
+        # debugging publishers
+        self.traj_pub = rospy.Publisher('/trajectory', Marker, queue_size=1)
+
     def load_environmental_map(self, path):
         """
         Task-Planning will provide a map with height data for us to generate a path plan. This map will be
@@ -100,12 +104,12 @@ class Navigator():
 
         if self.initialize_hover:
             # bring the drone up to the flying plane before planning
-            self.fly_cmd.linear.x=0
-            self.fly_cmd.linear.y=0
-            self.fly_cmd.linear.z=1
+            self.fly_cmd.linear.x = 0
+            self.fly_cmd.linear.y = 0
+            self.fly_cmd.linear.z = 1 if location[2] < self.flight_height else -1
             self.vel_pub.publish(self.fly_cmd)
             
-            if location[2] >= self.flight_height:
+            if abs(location[2] - self.flight_height) < 0.1:
                 self.initialize_hover = False
             return
 
@@ -141,17 +145,6 @@ class Navigator():
                 
                 # determine a path to the next location, sets class variable self.path
                 self.path_found, self.path = self.planner.plan(next_waypoint, location)
-                # pass the information into the low level controller
-                self.llc.path = self.path
-                if self.llc.type == "PD": 
-                    self.llc.path_index = 0
-                elif self.llc.type == "PP": 
-                    self.llc.stop = False
-                    self.llc.path_segments = np.array([[self.path[i][0], 
-                                                        self.path[i][1], 
-                                                        self.path[i+1][0], 
-                                                        self.path[i+1][1]] 
-                                                        for i in range(len(self.path)-1)])
 
                 # planner failed to find a path to the next waypoint. Stay in place
                 if self.path is None:
@@ -164,9 +157,22 @@ class Navigator():
                     self.vel_pub.publish(self.fly_cmd)
                     return
                 
+                # pass the information into the low level controller
+                self.llc.path = self.path
+                if self.llc.type == "PD": 
+                    self.llc.path_index = 0
+                elif self.llc.type == "PP": 
+                    self.llc.stop = False
+                    self.llc.path_segments = np.array([[self.path[i][0], 
+                                                        self.path[i][1], 
+                                                        self.path[i+1][0], 
+                                                        self.path[i+1][1]] 
+                                                        for i in range(len(self.path)-1)])
+                
                 self.path_plan = False
                 print(f"Drone found the following route: {self.path}")
-                self.vis_paths(self.path)
+                self.vis_paths_image(self.path)
+                self.publish_path_rviz(self.path)
                 self.path_index = 0   
 
             # Beginning of LLC Implementation. Perhaps abstract away into another class.
@@ -254,7 +260,7 @@ class Navigator():
         """
         pass
 
-    def vis_paths(self, path):
+    def vis_paths_image(self, path):
         path_grid = np.array([meters_to_grid(self.world_dims, self.max_row, self.max_col, point[0], point[1]) for point in path])
         rows, cols = path_grid[:, 0], path_grid[:, 1]
         new_grid = self.occupancy_grid
@@ -262,6 +268,31 @@ class Navigator():
         cv2.imshow('new grid', new_grid)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+
+    def publish_path_rviz(self, path):
+        print("Publishing trajectory")
+        header = Header()
+        header.stamp = rospy.Time.now()
+        header.frame_id = "world"
+        marker = Marker()
+        marker.header = header
+        marker.ns = "trajectory"
+        marker.id = 2
+        marker.type = marker.LINE_STRIP
+        marker.lifetime = rospy.Duration.from_sec(0)
+        marker.action = marker.ADD
+        marker.scale.x = 0.3
+        marker.color.r = 1.0
+        marker.color.g = 1.0
+        marker.color.b = 1.0
+        marker.color.a = 1.0
+        for p in path:
+            pt = Point32()
+            pt.x = p[0]
+            pt.y = p[1]
+            pt.z = p[2]
+            marker.points.append(pt)
+        self.traj_pub.publish(marker)
 
 # Functions for testing purposes
 def grid_to_meters(world_dims: tuple, max_row: int, max_col: int, row: int, col: int) -> tuple:

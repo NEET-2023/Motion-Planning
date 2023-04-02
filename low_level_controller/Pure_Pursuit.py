@@ -20,7 +20,7 @@ class PurePursuit():
     """
     def __init__(self, path=None, odom=None, pose=None, threshold=0):
         self.fly_cmd = Twist()
-        self.lookahead = 1.5
+        self.lookahead = 1.0
         self.speed = 0.5
         self.path = path
         self.path_segments = None
@@ -42,10 +42,6 @@ class PurePursuit():
         self.curr_pose_pub = rospy.Publisher("/guess_pose", PointStamped, queue_size=1)
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.stop = False
-
-        # Error Publisher for debugging
-        self.real_pose_sub = rospy.Subscriber("/real_pose", Odometry, self.realPose_callback, queue_size=1)
-        self.error_pub = rospy.Publisher("/error", Float32, queue_size=10)
 
     # Compute Euclidean distance between 2 points
     def distance(self, point1, point2):
@@ -148,7 +144,7 @@ class PurePursuit():
 	
         path_vector = desired_point - point
         new_yaw = np.arctan2(path_vector[1],path_vector[0])
-        eta = new_yaw - pose[-1] 
+        eta = new_yaw #- pose[-1] 
 
         # obtain x and y components of eta to command movement
         # hard code flight speed for now (1)
@@ -161,7 +157,7 @@ class PurePursuit():
             self.stop = True
             return True, np.array([0, 0, 0])
 
-        if eta < (np.pi/6): self.lookahead = 1.5
+        if eta < (np.pi/6): self.lookahead = 1.0
         else: self.lookahead = 0.5
 
         #if env is too close to drone
@@ -175,17 +171,6 @@ class PurePursuit():
             v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
 
         return False, (v_x, v_y, v_z)
-
-    def realPose_callback(self, msg):
-        if self.path_segments is None or self.stop:
-            return
-
-        real_pose = msg.pose.pose.position
-        real_pose_position = [real_pose.x, real_pose.y]
-        rospy.loginfo("%s", np.array([list(point) for point in self.path]))
-        distances = np.apply_along_axis(lambda x: self.distance(x, real_pose_position), 1, np.array([list(point) for point in self.path]))
-        min_distance_index = np.argmin(distances)
-        self.error_pub.publish(min(distances))
 
 if __name__=="__main__":
     rospy.init_node("pure_pursuit")
