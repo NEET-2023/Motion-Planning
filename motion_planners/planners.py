@@ -25,7 +25,7 @@ class Planners():
 
         return status, path    
 
-    def a_star(self, goal: np.ndarray, start: np.ndarray, debug=False) -> None:
+    def a_star(self, goal: np.ndarray, start: np.ndarray, debug=False) -> tuple:
         """
         This function will generate a path from location start to location goal. It will generate a plan
         that avoids obstacles by planning over the provided map in self.map
@@ -38,7 +38,8 @@ class Planners():
         goal (np.ndarray): x, y location the drone is to arrive
 
         Returns:
-        path (list): Nodes containing the (x, y, z) coordinates for the drone to follow along its path
+        status, path (tuple): path_found (bool), Nodes containing the (x, y, z) coordinates for the drone to 
+        follow along its path (list)
         """
         path_found = False
         path = None
