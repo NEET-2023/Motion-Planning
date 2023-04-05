@@ -1,7 +1,6 @@
 import rospy
 import numpy as np
 from node import Node
-from geometry_msgs.msg import PoseStamped, PoseArray, Point32
 
 class Planners():
     def __init__(self,  algo: str, world_dims: tuple, occupancy_grid: np.ndarray, flight_height: int, debug = False):

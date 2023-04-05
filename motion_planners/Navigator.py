@@ -1,9 +1,8 @@
 import rospy
-import os
 import cv2
 import numpy as np
 import skimage.measure
-import sys, os
+import sys
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist, Point32
 from nav_msgs.msg import Odometry
@@ -11,9 +10,10 @@ from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Header
 from planners import Planners
-sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning')
+sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning/')
 from low_level_controller.PD import PD
 from low_level_controller.Pure_Pursuit import PurePursuit
+from low_level_controller.Face_Forward import FaceForward
 
 class Navigator():
     def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoints: list, debug=False):
@@ -38,9 +38,10 @@ class Navigator():
         self.path_index = 0
         # Planner
         self.planner = Planners(algo, world_dims, occupancy_grid, self.flight_height)
-        # Low Level Controller
+        # Low Level Controllers
         self.llc = PD()
         # self.llc = PurePursuit()
+        self.ffc = FaceForward()
         # PD controller initializations
         self.kp = 1.0
         self.kd = 0
@@ -186,11 +187,20 @@ class Navigator():
             self.next_waypoint, v_world = self.llc.actuate()
             self.prev_v_world = v_world
 
-            self.face_forward_control(v_world, pose)
+            self.ffc.prev_angular_z = self.prev_angular_z
+            v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
+
+            self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
+            self.fly_cmd.angular.z = omega_z
+            self.prev_angular_z = omega_z
+            self.vel_pub.publish(self.fly_cmd)
+
+            # self.face_forward_control(v_world, pose)
             # print(f"v_x: {self.fly_cmd.linear.x}")
             # print(f"v_y: {self.fly_cmd.linear.y}")
             # print(f"v_z: {self.fly_cmd.linear.z}")
             # print(f"omega_z: {self.fly_cmd.angular.z}")
+            # print(self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z, self.fly_cmd.angular.z)
 
         # all waypoints reached, no need to do anything anymore
         else:
@@ -198,41 +208,6 @@ class Navigator():
                 print(f"We failed to find paths. We stopped at waypoint {self.waypoints[self.waypoint_index]}")
             else:
                 print("We've hit all waypoints! Should I return to base?")
-
-    def face_forward_control(self, velocity, pose):
-        '''
-        Controller to make the drone face in the direction of the next waypoint
-
-        Parameters:
-        velocity (np.ndarray): velocity command in the world frame
-        pose (pose): the pose of the drone in the world
-
-        Returns: 
-        None
-        '''
-        quaternion = pose.orientation
-        r = R.from_quat([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
-        # the yaw angle of the drone in the world frame
-        yaw_world = r.as_euler('xyz')[2] % (2*np.pi) # put between (0, 2*pi)
-        # convert the velocity into the frame of the drone
-        v_drone = np.array([velocity[0]*np.cos(yaw_world) + velocity[1]*np.sin(yaw_world), 
-                            -velocity[0]*np.sin(yaw_world) + velocity[1]*np.cos(yaw_world)])
-        # set the x and y velocity commands in the drone frame
-        self.fly_cmd.linear.x, self.fly_cmd.linear.y = v_drone
-        self.fly_cmd.linear.z = velocity[2]
-        
-        # get angle of velocity vector to vector the angles are defined by 
-        a = np.array([1,0])
-        # make velocity_angle pos or neg depending on cross product result
-        velocity_angle = np.sign(np.cross(a, velocity[:2]))*np.arccos(np.dot(a, velocity[:2])/(np.linalg.norm(a)*np.linalg.norm(velocity[:2]))) % (2*np.pi)
-        # angle to rotate
-        rotation_angle = velocity_angle - yaw_world
-        # set the yaw rate to realign the drone
-        self.fly_cmd.angular.z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
-        #prior angular velocity?
-        self.prev_angular_z = self.fly_cmd.angular.z
-        #publish angle command
-        self.vel_pub.publish(self.fly_cmd)
 
     def range_callback(self, msg) -> None:
         """
@@ -260,7 +235,7 @@ class Navigator():
         """
         pass
 
-    def vis_paths_image(self, path):
+    def vis_paths_image(self, path) -> None:
         path_grid = np.array([meters_to_grid(self.world_dims, self.max_row, self.max_col, point[0], point[1]) for point in path])
         rows, cols = path_grid[:, 0], path_grid[:, 1]
         new_grid = self.occupancy_grid
@@ -269,7 +244,7 @@ class Navigator():
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    def publish_path_rviz(self, path):
+    def publish_path_rviz(self, path) -> None:
         print("Publishing trajectory")
         header = Header()
         header.stamp = rospy.Time.now()
@@ -281,7 +256,7 @@ class Navigator():
         marker.type = marker.LINE_STRIP
         marker.lifetime = rospy.Duration.from_sec(0)
         marker.action = marker.ADD
-        marker.scale.x = 0.3
+        marker.scale.x = 0.1
         marker.color.r = 1.0
         marker.color.g = 1.0
         marker.color.b = 1.0
