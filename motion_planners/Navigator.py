@@ -8,7 +8,7 @@ from geometry_msgs.msg import Twist, Point32
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Bool
 from planners import Planners
 sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning/')
 from low_level_controller.PD import PD
@@ -17,9 +17,6 @@ from low_level_controller.Face_Forward import FaceForward
 
 class Navigator():
     def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoints = None, debug=False):
-        # debugging parameter
-        self.debug = debug
-        self.debug_location = np.array([0, 0, 0])
         # Map inforation intializations
         self.occupancy_grid = occupancy_grid
         self.max_row, self.max_col = np.array(occupancy_grid.shape) - 1
@@ -31,7 +28,8 @@ class Navigator():
         self.waypoints = waypoints 
         self.waypoint_index = 0
         self.next_waypoint = True
-        self.done_travelling = True
+        self.done_travelling = Bool()
+        self.done_travelling.data = False
         self.path_plan = True
         self.path_found = True
         self.path = None 
@@ -58,6 +56,7 @@ class Navigator():
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
         self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point32, self.waypoint_callback)
+        self.finished_pub = rospy.Publisher('/done_travelling', Bool, queue_size=1)
         # Toomas mentioned possibly publishing a map topic. Not sure if this is the way to go for initial planning
         Temp = Range
         self.map_sub = rospy.Subscriber('/map_topic', Temp, self.map_callback)
@@ -74,7 +73,7 @@ class Navigator():
         new_waypoint = np.array(msg.x, msg.y, self.flight_height)
         self.waypoints = [new_waypoint]
         if not np.all(self.last_waypoint == new_waypoint):
-            self.done_travelling = False
+            self.done_travelling.data = False
             self.last_waypoint = self.waypoints[0]
 
     def load_environmental_map(self, path):
@@ -112,10 +111,7 @@ class Navigator():
 
         pose = msg.pose.pose
         # determine where the drone is currently located
-        if self.debug:
-            location = self.debug_location
-        else:
-            location = np.array([pose.position.x, pose.position.y, pose.position.z])
+        location = np.array([pose.position.x, pose.position.y, pose.position.z])
 
         if self.initialize_hover:
             # bring the drone up to the flying plane before planning
@@ -129,27 +125,20 @@ class Navigator():
             return
 
         # only execute this logic if we haven't hit all waypoints yet
-        if not self.done_travelling and self.path_found:
+        if not self.done_travelling.data and self.path_found:
             # if we've gotten close enough to the target waypoint, plan for next waypoint
-            if self.debug:
-                print(f"absolute difference: {np.absolute(self.waypoints[self.waypoint_index] - location)}")
-
-            # if np.all(np.absolute(self.waypoints[self.waypoint_index] - location) < np.array([0.2, 0.2, 0.2])):
             if self.next_waypoint:
-                if self.debug:
-                    print("========================================================")
-                    print(f"Drone made it to new waypoint location: {self.waypoints[self.waypoint_index]}")
-                self.waypoint_index += 1
-                self.path_plan = True
-                self.next_waypoint = False
                 # condition to check if we've hit all waypoints
                 if self.waypoint_index == len(self.waypoints):
-                    self.done_travelling = True
+                    self.done_travelling.data = True
                     return
+                self.path_plan = True
+                self.next_waypoint = False
 
             # if we still haven't hit all waypoints, continue logic execution
             if self.path_plan:
                 next_waypoint = self.waypoints[self.waypoint_index]
+                self.waypoint_index += 1
 
                 # stop the drone while we path plan
                 print(f"Drone is planning new route to: {next_waypoint}")
@@ -222,8 +211,12 @@ class Navigator():
         else:
             if not self.path_found:
                 print(f"We failed to find paths. We stopped at waypoint {self.waypoints[self.waypoint_index]}")
+                return False
             else:
                 print("We've hit all waypoints! Should I return to base?")
+                self.done_travelling.data = True
+                self.finished_pub.publish(self.done_travelling.data)
+                return True
 
     def range_callback(self, msg) -> None:
         """
@@ -349,7 +342,7 @@ if __name__ == "__main__":
 
     # generate some waypoints to follow
     free_grid = np.transpose(np.where(dilated_ococupancy == 0))
-    rows = np.random.choice(free_grid.shape[0], 5, replace=False)
+    rows = np.random.choice(free_grid.shape[0], 1, replace=False)
     waypoints_grid = free_grid[rows, :]
 
     # convert the waypoints into cartesian space
@@ -360,8 +353,8 @@ if __name__ == "__main__":
 
     try:
         # create the navigator object, pass in important mapping information
-        rospy.init_node('AStar_planner', anonymous=True)
-        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoints=None)
+        rospy.init_node('Planner', anonymous=True)
+        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoints=waypoints)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
