@@ -144,7 +144,7 @@ class PurePursuit():
         # hard code flight speed for now (1)
         v_x = self.speed*np.cos(eta)
         v_y = self.speed*np.sin(eta)
-        print(v_x, v_y)
+        # print(v_x, v_y)
 
         self.path_segments = self.path_segments[min_index:]
 
