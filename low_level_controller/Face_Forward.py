@@ -1,5 +1,6 @@
 import rospy
 import numpy as np
+from std_msgs.msg import Float32
 from scipy.spatial.transform import Rotation as R
 
 class FaceForward():
@@ -7,6 +8,7 @@ class FaceForward():
         self.prev_angular_z = 0
         self.kp = 1.0
         self.kd = 0
+        self.debug_pub = rospy.Publisher('/rotation_angle', Float32, queue_size=1)
 
     def face_forward_control(self, velocity: np.ndarray, pose):
         '''
@@ -38,5 +40,7 @@ class FaceForward():
         rotation_angle = velocity_angle - yaw_world
         # set the yaw rate to realign the drone
         omega_z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
+        self.debug_pub.publish(omega_z)
+        self.prev_angular_z = omega_z
         #publish angle command
         return (vx, vy, vz), omega_z

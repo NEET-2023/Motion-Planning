@@ -32,7 +32,7 @@ class FakeNavPub():
         self.pub = rospy.Publisher('/waypoint_topic', Point32, queue_size=1)
         self.sub = rospy.Subscriber('/ground_truth/state', Odometry, self.callback)
         self.sub_nav = rospy.Subscriber('/done_travelling', Bool, self.done_callback)
-        self.pub_next = True
+        self.pub_next = False
         self.flight_height = 10
 
     def callback(self, msg):
@@ -40,16 +40,20 @@ class FakeNavPub():
             print("Done Travelling. Should I return to Base?")
             return 
         
+        new_waypoint = self.waypoints[self.waypoint_index]
+        point = Point32()
+        point.x = new_waypoint[0]
+        point.y = new_waypoint[1]
+        point.z = self.flight_height
+        print(f"Publishing point: {point.x, point.y, point.z}")
+        self.pub.publish(point)
+
+        # reached the waypoint, change the index
         if self.pub_next:
-            new_waypoint = self.waypoints[self.waypoint_index]
-            point = Point32()
-            point.x = new_waypoint[0]
-            point.y = new_waypoint[1]
-            point.z = self.flight_height
-            print(f"Publishing point: {point.x, point.y, point.z}")
-            self.pub.publish(point)
             self.waypoint_index += 1
             self.pub_next = False
+        else:
+            self.pub
         self.rate.sleep()
 
     def done_callback(self, msg):
@@ -80,6 +84,8 @@ if __name__ == "__main__":
     for waypoint in waypoints_grid:
         x, y = grid_to_meters(world_dims, max_row, max_col, waypoint[0], waypoint[1])
         waypoints.append((x, y, 10))
+
+    test_waypoints = [[0, -20, 10], [20, -20, 10], [-20, 20, 10]]
     
     try:
         # create the navigator object, pass in important mapping information
