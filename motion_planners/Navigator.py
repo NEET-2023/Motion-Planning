@@ -16,7 +16,7 @@ from low_level_controller.Pure_Pursuit import PurePursuit
 from low_level_controller.Face_Forward import FaceForward
 
 class Navigator():
-    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoints = None, debug=False):
+    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoint = None, debug=False):
         # Map inforation intializations
         self.occupancy_grid = occupancy_grid
         self.max_row, self.max_col = np.array(occupancy_grid.shape) - 1
@@ -25,9 +25,7 @@ class Navigator():
         self.world_dims = world_dims
         self.max_z = 100 
         # Tracking of which waypoint/point in path we are following
-        self.waypoints = waypoints 
-        self.waypoint_index = 0
-        self.next_waypoint = True
+        self.waypoint = waypoint 
         self.done_travelling = Bool()
         self.done_travelling.data = False
         self.path_plan = True
@@ -70,11 +68,10 @@ class Navigator():
         self.traj_pub = rospy.Publisher('/trajectory', Marker, queue_size=1)
 
     def waypoint_callback(self, msg):
-        new_waypoint = np.array(msg.x, msg.y, self.flight_height)
-        self.waypoints = [new_waypoint]
-        if not np.all(self.last_waypoint == new_waypoint):
+        self.waypoint = np.array([msg.x, msg.y, self.flight_height])
+        if not np.all(self.last_waypoint == self.waypoint):
             self.done_travelling.data = False
-            self.last_waypoint = self.waypoints[0]
+            self.last_waypoint = self.waypoint
 
     def load_environmental_map(self, path):
         """
@@ -105,7 +102,7 @@ class Navigator():
         None
         """ 
         # no waypoints provided yet
-        if not self.waypoints:
+        if self.waypoint is None:
             print("No waypoints given")
             return
 
@@ -120,35 +117,33 @@ class Navigator():
             self.fly_cmd.linear.z = 1 if location[2] < self.flight_height else -1
             self.vel_pub.publish(self.fly_cmd)
             
+            # condition to terminate hover sequence and let the rest of motion planning take over
             if abs(location[2] - self.flight_height) < 0.1:
                 self.initialize_hover = False
             return
 
         # only execute this logic if we haven't hit all waypoints yet
         if not self.done_travelling.data and self.path_found:
-            # if we've gotten close enough to the target waypoint, plan for next waypoint
-            if self.next_waypoint:
-                # condition to check if we've hit all waypoints
-                if self.waypoint_index == len(self.waypoints):
-                    self.done_travelling.data = True
-                    return
-                self.path_plan = True
-                self.next_waypoint = False
+            # # if we've gotten close enough to the target waypoint, plan for next waypoint
+            # if self.next_waypoint:
+            #     # condition to check if we've hit all waypoints
+            #     if self.waypoint_index == len(self.waypoints):
+            #         self.done_travelling.data = True
+            #         return
+            #     self.path_plan = True
+            #     self.next_waypoint = False
 
             # if we still haven't hit all waypoints, continue logic execution
             if self.path_plan:
-                next_waypoint = self.waypoints[self.waypoint_index]
-                self.waypoint_index += 1
-
                 # stop the drone while we path plan
-                print(f"Drone is planning new route to: {next_waypoint}")
+                print(f"Drone is planning new route to: {self.waypoint}")
                 self.fly_cmd.linear.x=0
                 self.fly_cmd.linear.y=0
                 self.fly_cmd.linear.z=0
                 self.vel_pub.publish(self.fly_cmd)
                 
                 # determine a path to the next location, sets class variable self.path
-                self.path_found, self.path = self.planner.plan(next_waypoint, location)
+                self.path_found, self.path = self.planner.plan(self.waypoint, location)
 
                 # planner failed to find a path to the next waypoint. Stay in place
                 if self.path is None:
@@ -189,12 +184,18 @@ class Navigator():
             self.llc.within_threshold = self.within_threshold
             self.llc.threshold = self.threshold
             self.llc.prev_v_world = self.prev_v_world
-            self.next_waypoint, v_world = self.llc.actuate()
+            self.done_travelling.data, v_world = self.llc.actuate()
             self.prev_v_world = v_world
+            # reset path_planning boolean for next waypoint iteration
+            if self.done_travelling.data:
+                self.path_plan = True
 
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
+            # in case we are not moving the drone
+            if np.isnan(omega_z):
+                omega_z = 0
 
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
@@ -210,10 +211,10 @@ class Navigator():
         # all waypoints reached, no need to do anything anymore
         else:
             if not self.path_found:
-                print(f"We failed to find paths. We stopped at waypoint {self.waypoints[self.waypoint_index]}")
+                print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
                 return False
             else:
-                print("We've hit all waypoints! Should I return to base?")
+                print("Reached Waypoint!")
                 self.done_travelling.data = True
                 self.finished_pub.publish(self.done_travelling.data)
                 return True
@@ -354,7 +355,7 @@ if __name__ == "__main__":
     try:
         # create the navigator object, pass in important mapping information
         rospy.init_node('Planner', anonymous=True)
-        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoints=waypoints)
+        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoint=None)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

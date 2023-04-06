@@ -2,8 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 class PD():
-    def __init__(self, path=None, pose=None, threshold=0, debug=False):
-        self.debug = debug
+    def __init__(self, path=None, pose=None, threshold=0):
         # Path Information
         self.path = path
         self.pose = pose
@@ -33,23 +32,18 @@ class PD():
         path_target = self.path[self.path_index] 
         # print(f"path target: {path_target}")
 
-        # fake drone movement if debugging
-        if self.debug:
-            print("Drone is moving....")
-            self.debug_location = path_target + 0.02*np.random.rand(*path_target.shape)
-            print(f"Drone now at location: {self.debug_location}")
-        else:
-            # pass in velocity commands to move drone, implement x, y value PD
-            errors = path_target - location 
-            # calculate velocity vector with respect to the world frame
-            vx_world, vy_world = self.kp*errors[:2] - self.kd*self.prev_v_world[:2]
 
-            #if env is too close to drone
-            if self.within_threshold:
-                print('violated threshold')
-                v_z = self.threshold-self.ground_dist
-            # nominal threshold present, control global z value
-            else:
-                z_error = path_target[2] - location[2]
-                v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
+        # pass in velocity commands to move drone, implement x, y value PD
+        errors = path_target - location 
+        # calculate velocity vector with respect to the world frame
+        vx_world, vy_world = self.kp*errors[:2] - self.kd*self.prev_v_world[:2]
+
+        #if env is too close to drone
+        if self.within_threshold:
+            print('violated threshold')
+            v_z = self.threshold-self.ground_dist
+        # nominal threshold present, control global z value
+        else:
+            z_error = path_target[2] - location[2]
+            v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
         return False, np.array((vx_world, vy_world, v_z))
