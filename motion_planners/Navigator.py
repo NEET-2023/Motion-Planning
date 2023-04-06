@@ -16,7 +16,7 @@ from low_level_controller.Pure_Pursuit import PurePursuit
 from low_level_controller.Face_Forward import FaceForward
 
 class Navigator():
-    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoints: list, debug=False):
+    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoints = None, debug=False):
         # debugging parameter
         self.debug = debug
         self.debug_location = np.array([0, 0, 0])
@@ -31,11 +31,12 @@ class Navigator():
         self.waypoints = waypoints 
         self.waypoint_index = 0
         self.next_waypoint = True
-        self.done_travelling = False
+        self.done_travelling = True
         self.path_plan = True
         self.path_found = True
         self.path = None 
         self.path_index = 0
+        self.last_waypoint = None
         # Planner
         self.planner = Planners(algo, world_dims, occupancy_grid, self.flight_height)
         # Low Level Controllers
@@ -56,6 +57,7 @@ class Navigator():
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
+        self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point32, self.waypoint_callback)
         # Toomas mentioned possibly publishing a map topic. Not sure if this is the way to go for initial planning
         Temp = Range
         self.map_sub = rospy.Subscriber('/map_topic', Temp, self.map_callback)
@@ -67,6 +69,13 @@ class Navigator():
 
         # debugging publishers
         self.traj_pub = rospy.Publisher('/trajectory', Marker, queue_size=1)
+
+    def waypoint_callback(self, msg):
+        new_waypoint = np.array(msg.x, msg.y, self.flight_height)
+        self.waypoints = [new_waypoint]
+        if not np.all(self.last_waypoint == new_waypoint):
+            self.done_travelling = False
+            self.last_waypoint = self.waypoints[0]
 
     def load_environmental_map(self, path):
         """
@@ -95,7 +104,12 @@ class Navigator():
 
         Returns: 
         None
-        """        
+        """ 
+        # no waypoints provided yet
+        if not self.waypoints:
+            print("No waypoints given")
+            return
+
         pose = msg.pose.pose
         # determine where the drone is currently located
         if self.debug:
@@ -347,7 +361,7 @@ if __name__ == "__main__":
     try:
         # create the navigator object, pass in important mapping information
         rospy.init_node('AStar_planner', anonymous=True)
-        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoints)
+        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoints=None)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
