@@ -5,7 +5,7 @@ import skimage.measure
 import sys
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist, Point32
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Header, Bool
@@ -55,9 +55,7 @@ class Navigator():
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
         self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point32, self.waypoint_callback)
         self.finished_pub = rospy.Publisher('/done_travelling', Bool, queue_size=1)
-        # Toomas mentioned possibly publishing a map topic. Not sure if this is the way to go for initial planning
-        Temp = Range
-        self.map_sub = rospy.Subscriber('/map_topic', Temp, self.map_callback)
+        self.map_sub = rospy.Subscriber('/map_topic', OccupancyGrid, self.occupancy_callback)
         # fly command initialization
         self.fly_cmd = Twist()
         # thresholds
@@ -78,6 +76,21 @@ class Navigator():
             self.path_plan = True
             self.path_found = True
             self.last_waypoint = self.waypoint
+
+    def occupancy_callback(self, msg):
+        """
+        Create a 2D occpancy grid from the provided 1D list of blocking probabilities. Assumes a value of 
+        0 means the space is open.
+
+        Parameters:
+        msg (OccupancyGrid): has one attribute called data which contains the blocking probabilities
+
+        Returns:
+        None
+        """
+        occupancies = msg.data
+        size = len(occupancies)
+        self.occupancy_grid = np.array(occupancies).reshape((size**0.5, size**0.5))
 
     def load_environmental_map(self, path):
         """
@@ -246,14 +259,6 @@ class Navigator():
         
         #if height is below threshold, increase the height of the 
         self.within_threshold = self.ground_dist < self.threshold
-            
-    def map_callback(self, msg):
-        """
-        Extract map information from the map topic. Unsure if this is the best way to approach this. 
-        May want a static map for initial planning. Perhaps a different script handles the dynamic
-        updates
-        """
-        pass
 
     def vis_paths_image(self, path: list) -> None:
         """
