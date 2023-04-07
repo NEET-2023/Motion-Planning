@@ -102,8 +102,11 @@ class PurePursuit():
         min_index = np.argmin(min_distances)
 
         forward_path = self.path_segments[min_index:][::-1]
-        desired_point = self.path_segments[min_index][2:] # default desired point as endpoint of closest line segment of trajectory
+        desired_point = self.path_segments[min_index][:2] # default desired point as endpoint of closest line segment of trajectory
         # print(desired_point)
+
+        #potentially repace with somethiing much simpler. Maybe just take the first segment
+        
         for i, segment in enumerate(forward_path):
             # start and end points of each segment 
             start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])

@@ -36,8 +36,8 @@ class Navigator():
         # Planner
         self.planner = Planners(algo, world_dims, occupancy_grid, self.flight_height)
         # Low Level Controllers
-        self.llc = PD()
-        # self.llc = PurePursuit()
+        # self.llc = PD()
+        self.llc = PurePursuit()
         self.ffc = FaceForward()
         # PD controller initializations
         self.kp = 1.0
@@ -193,6 +193,7 @@ class Navigator():
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
+            # potentailly face motion direction first and then move
             # in case we are not moving the drone
             if np.isnan(omega_z):
                 omega_z = 0

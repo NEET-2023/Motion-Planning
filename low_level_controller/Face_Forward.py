@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 class FaceForward():
     def __init__(self):
         self.prev_angular_z = 0
-        self.kp = 1.0
+        self.kp = 9
         self.kd = 0
         self.debug_pub = rospy.Publisher('/rotation_angle', Float32, queue_size=1)
 

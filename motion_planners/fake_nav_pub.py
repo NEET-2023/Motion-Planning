@@ -52,14 +52,14 @@ class FakeNavPub():
         if self.pub_next:
             self.waypoint_index += 1
             self.pub_next = False
-        else:
-            self.pub
+        # else:
+        #     self.pub.publish(point)
         self.rate.sleep()
+        # wrap relevant parts in a timer
 
     def done_callback(self, msg):
         if msg.data:
             self.pub_next = True
-
 
 if __name__ == "__main__":
     path = '../occupancy_grids/images/rolling_hills_map_10.png'
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     try:
         # create the navigator object, pass in important mapping information
         rospy.init_node('fake_pub', anonymous=True)
-        rate = rospy.Rate(10)
+        rate = rospy.Rate(1)
         PUB = FakeNavPub(waypoints=waypoints, rate=rate)
         rospy.spin()
     except rospy.ROSInterruptException:
