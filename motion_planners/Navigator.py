@@ -67,10 +67,16 @@ class Navigator():
         # debugging publishers
         self.traj_pub = rospy.Publisher('/trajectory', Marker, queue_size=1)
 
-    def waypoint_callback(self, msg):
+    def waypoint_callback(self, msg: Point32) -> None:
+        """
+        Task-Planning will provide the waypoints we are to follow. This function will override the waypoint 
+        we are interested in planning and set the necessary flags in order to proceed properly.
+        """
         self.waypoint = np.array([msg.x, msg.y, self.flight_height])
         if not np.all(self.last_waypoint == self.waypoint):
             self.done_travelling.data = False
+            self.path_plan = True
+            self.path_found = True
             self.last_waypoint = self.waypoint
 
     def load_environmental_map(self, path):
@@ -87,7 +93,7 @@ class Navigator():
         """
         pass
 
-    def odom_callback(self, msg: any) -> None:
+    def odom_callback(self, msg: Odometry) -> None:
         """
         this callback function will take in the odometry to determine where we are in space. We will use
         these to set the actuations in a PD controller for x, y, and z position
@@ -103,8 +109,11 @@ class Navigator():
         """ 
         # no waypoints provided yet
         if self.waypoint is None:
-            print("No waypoints given")
+            print("No waypoint provided")
             return
+        # no occupancy grid provided yet
+        if self.occupancy_grid is None:
+            print("No occupancy grid provided")
 
         pose = msg.pose.pose
         # determine where the drone is currently located
