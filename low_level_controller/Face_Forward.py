@@ -40,6 +40,10 @@ class FaceForward():
         rotation_angle = velocity_angle - yaw_world
         # set the yaw rate to realign the drone
         omega_z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
+        # in case we are not moving the drone
+        if np.isnan(omega_z):
+            omega_z = 0
+            
         self.debug_pub.publish(omega_z)
         self.prev_angular_z = omega_z
         #publish angle command

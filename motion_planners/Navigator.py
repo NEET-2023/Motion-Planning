@@ -150,22 +150,14 @@ class Navigator():
 
         # only execute this logic if we haven't hit all waypoints yet
         if not self.done_travelling.data and self.path_found:
-            # # if we've gotten close enough to the target waypoint, plan for next waypoint
-            # if self.next_waypoint:
-            #     # condition to check if we've hit all waypoints
-            #     if self.waypoint_index == len(self.waypoints):
-            #         self.done_travelling.data = True
-            #         return
-            #     self.path_plan = True
-            #     self.next_waypoint = False
-
-            # if we still haven't hit all waypoints, continue logic execution
+            # if we need to plan a path, go ahead and do that
             if self.path_plan:
                 # stop the drone while we path plan
                 print(f"Drone is planning new route to: {self.waypoint}")
                 self.fly_cmd.linear.x=0
                 self.fly_cmd.linear.y=0
                 self.fly_cmd.linear.z=0
+                self.fly_cmd.angular.z = 0
                 self.vel_pub.publish(self.fly_cmd)
                 
                 # determine a path to the next location, sets class variable self.path
@@ -179,6 +171,7 @@ class Navigator():
                     self.fly_cmd.linear.x=0
                     self.fly_cmd.linear.y=0
                     self.fly_cmd.linear.z=0
+                    self.fly_cmd.angular.z = 0
                     self.vel_pub.publish(self.fly_cmd)
                     return
                 
@@ -196,8 +189,9 @@ class Navigator():
                                                         self.path[i+1][0], 
                                                         self.path[i+1][1]] 
                                                         for i in range(len(self.path)-1)])
-                
                 self.path_plan = False
+
+                # some RVIZ visualizations for our sake
                 print(f"Drone found the following route: {self.path}")
                 self.vis_paths_image(self.path)
                 self.publish_path_rviz(self.path)
@@ -211,17 +205,12 @@ class Navigator():
             self.llc.prev_v_world = self.prev_v_world
             self.done_travelling.data, v_world = self.llc.actuate()
             self.prev_v_world = v_world
-            # reset path_planning boolean for next waypoint iteration
-            if self.done_travelling.data:
-                self.path_plan = True
 
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
             # potentailly face motion direction first and then move
-            # in case we are not moving the drone
-            if np.isnan(omega_z):
-                omega_z = 0
+            
 
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
