@@ -4,7 +4,7 @@ import numpy as np
 import skimage.measure
 import sys
 from scipy.spatial.transform import Rotation as R
-from geometry_msgs.msg import Twist, Point32
+from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
@@ -16,7 +16,7 @@ from low_level_controller.Pure_Pursuit import PurePursuit
 from low_level_controller.Face_Forward import FaceForward
 
 class Navigator():
-    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, waypoint = None, debug=False):
+    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, rate: rospy.Rate, waypoint = None, debug=False):
         # Map inforation intializations
         self.occupancy_grid = occupancy_grid
         self.max_row, self.max_col = np.array(occupancy_grid.shape) - 1
@@ -49,11 +49,12 @@ class Navigator():
         self.max_vz = 1
         # Face Forward control variables
         self.prev_angular_z = 0
+        self.facing_forward = False
         # ROS relevant initializations
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
-        self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point32, self.waypoint_callback)
+        self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point, self.waypoint_callback)
         self.finished_pub = rospy.Publisher('/done_travelling', Bool, queue_size=1)
         self.map_sub = rospy.Subscriber('/map_topic', OccupancyGrid, self.occupancy_callback)
         # fly command initialization
@@ -65,7 +66,10 @@ class Navigator():
         # debugging publishers
         self.traj_pub = rospy.Publisher('/trajectory', Marker, queue_size=1)
 
-    def waypoint_callback(self, msg: Point32) -> None:
+        # rate parameters
+        self.rate = rate
+
+    def waypoint_callback(self, msg: Point) -> None:
         """
         Task-Planning will provide the waypoints we are to follow. This function will override the waypoint 
         we are interested in planning and set the necessary flags in order to proceed properly.
@@ -184,8 +188,7 @@ class Navigator():
                     self.llc.path_index = 0
                 # CURRENT BUGS WITH PP
                 # 1. PP STOPS DISTANCE LOOK_AHEAD FROM WAYPOINT
-                # 2. FACE-FORWARD CONTROLLER STOP WORKING ONCE FIRST WAYPOINT REACHED
-                # 3. SOMETIMES DRONE FREAKS OUT AND I HAVE NO IDEA WHY
+                # 2. SOMETIMES DRONE FREAKS OUT AND I HAVE NO IDEA WHY
                 elif self.llc.type == "PP": 
                     self.llc.stop = False
                     self.llc.path_segments = np.array([[self.path[i][0], 
@@ -240,6 +243,7 @@ class Navigator():
                 print("Reached Waypoint!")
                 self.done_travelling.data = True
                 self.finished_pub.publish(self.done_travelling.data)
+                rate.sleep()
                 return True
 
     def range_callback(self, msg) -> None:
@@ -305,7 +309,7 @@ class Navigator():
         marker.color.b = 1.0
         marker.color.a = 1.0
         for p in path:
-            pt = Point32()
+            pt = Point()
             pt.x = p[0]
             pt.y = p[1]
             pt.z = p[2]
@@ -370,7 +374,8 @@ if __name__ == "__main__":
     try:
         # create the navigator object, pass in important mapping information
         rospy.init_node('Planner', anonymous=True)
-        NAV = Navigator('a_star', dilated_ococupancy, world_dims, waypoint=None)
+        rate = rospy.Rate(0.5)
+        NAV = Navigator('a_star', dilated_ococupancy, world_dims, rate, waypoint=None)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

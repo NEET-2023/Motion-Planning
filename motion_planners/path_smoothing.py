@@ -3,11 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as interpolate
 from math import comb
 
-def b_spline_path(path: list,
-                            n_path_points: int,
-                            degree: int = 3,
-                            s=None,
-                              ) -> tuple:
+def b_spline_path(path: list, n_path_points: int, degree: int = 3, s=None) -> tuple:
     """
     Approximate points with a B-Spline path
 

@@ -4,7 +4,7 @@ import cv2
 import skimage.measure
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
-from geometry_msgs.msg import Point32
+from geometry_msgs.msg import Point
 
 
 
@@ -29,7 +29,7 @@ class FakeNavPub():
         self.waypoints = waypoints
         self.waypoint_index = 0
         self.rate = rate
-        self.pub = rospy.Publisher('/waypoint_topic', Point32, queue_size=1)
+        self.pub = rospy.Publisher('/waypoint_topic', Point, queue_size=1)
         self.sub = rospy.Subscriber('/ground_truth/state', Odometry, self.callback)
         self.sub_nav = rospy.Subscriber('/done_travelling', Bool, self.done_callback)
         self.pub_next = False
@@ -41,7 +41,7 @@ class FakeNavPub():
             return 
         
         new_waypoint = self.waypoints[self.waypoint_index]
-        point = Point32()
+        point = Point()
         point.x = new_waypoint[0]
         point.y = new_waypoint[1]
         point.z = self.flight_height
@@ -85,13 +85,13 @@ if __name__ == "__main__":
         x, y = grid_to_meters(world_dims, max_row, max_col, waypoint[0], waypoint[1])
         waypoints.append((x, y, 10))
 
-    test_waypoints = [[0, -20, 10], [20, -20, 10], [-20, 20, 10]]
+    test_waypoints = [[0, -20, 10], [20, -20, 10], [-20, -20, 10]]
     
     try:
         # create the navigator object, pass in important mapping information
         rospy.init_node('fake_pub', anonymous=True)
         rate = rospy.Rate(1)
-        PUB = FakeNavPub(waypoints=waypoints, rate=rate)
+        PUB = FakeNavPub(waypoints=test_waypoints, rate=rate)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

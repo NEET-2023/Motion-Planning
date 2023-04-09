@@ -9,7 +9,7 @@ class PurePursuit():
     """
     def __init__(self, path=None, odom=None, pose=None, threshold=0):
         self.fly_cmd = Twist()
-        self.lookahead = 5
+        self.lookahead = 3
         self.speed = 0.5
         self.path = path
         self.path_segments = None
@@ -106,7 +106,7 @@ class PurePursuit():
         # print(desired_point)
 
         #potentially repace with somethiing much simpler. Maybe just take the first segment
-        
+
         for i, segment in enumerate(forward_path):
             # start and end points of each segment 
             start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])
@@ -156,8 +156,8 @@ class PurePursuit():
             self.stop = True
             return True, np.array([0, 0, 0])
 
-        if eta < (np.pi/6): self.lookahead = 5.0
-        else: self.lookahead = 2.0
+        if eta < (np.pi/6): self.lookahead = 3.0
+        else: self.lookahead = 1.5
 
         #if env is too close to drone
         if self.within_threshold:
