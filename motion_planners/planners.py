@@ -3,14 +3,13 @@ import numpy as np
 from node import Node
 
 class Planners():
-    def __init__(self,  algo: str, world_dims: tuple, occupancy_grid: np.ndarray, flight_height: int, debug = False):
+    def __init__(self,  algo: str, world_dims: tuple, occupancy_grid: np.ndarray, flight_height: int):
         self.algos = ['rrt','a_star']
         self.algo = algo
         self.min_x, self.max_x, self.min_y, self.max_y = world_dims
         self.occupancy_grid = occupancy_grid
         self.max_row, self.max_col = np.array(self.occupancy_grid.shape) - 1
         self.flight_height = flight_height
-        self.debug = debug
 
     def plan(self, goal: np.ndarray, start: np.ndarray):
         path = None
@@ -18,14 +17,14 @@ class Planners():
             raise Exception('not a valid algo')
         
         if self.algo == 'rrt':
-            status, path = self.rrt(goal,start,self.debug)
+            status, path = self.rrt(goal,start)
         
         elif self.algo == 'a_star':
-            status, path = self.a_star(goal,start,self.debug)
+            status, path = self.a_star(goal,start)
 
         return status, path    
 
-    def a_star(self, goal: np.ndarray, start: np.ndarray, debug=False) -> tuple:
+    def a_star(self, goal: np.ndarray, start: np.ndarray) -> tuple:
         """
         This function will generate a path from location start to location goal. It will generate a plan
         that avoids obstacles by planning over the provided map in self.map
@@ -43,13 +42,9 @@ class Planners():
         """
         path_found = False
         path = None
-        # testing will pass in row, col grid locations directly
-        if debug:
-            start_grid = start
-            end_grid = goal
-        else:
-            start_grid = np.array(self.meters_to_grid(*start[:2]))
-            end_grid = np.array(self.meters_to_grid(*goal[:2]))
+
+        start_grid = np.array(self.meters_to_grid(*start[:2]))
+        end_grid = np.array(self.meters_to_grid(*goal[:2]))
 
         # note that that both nodes and the priority queue operate in u,v space, not x,y space
         start_node = Node(start_grid)
@@ -118,7 +113,7 @@ class Planners():
                 break
         points.reverse()
         return points
-    
+
     def get_neighbors(self, loc: np.ndarray) -> set:
         """
         Checks the neighbors of the current grid location we are at and returns the set that are free.
@@ -137,14 +132,14 @@ class Planners():
         for translation in translations:
             new_loc = loc + translation
             # check validity of new location (make sure we didn't go outside the map)
-            if np.any(new_loc < 0) or np.any(new_loc == np.array(self.occupancy_grid.shape)):
+            if np.any(new_loc < 0) or np.any(new_loc >= np.array(self.occupancy_grid.shape)):
                 continue
             # only add unoccupied locations and nodes unvisited by the A-star algorithm
             if self.occupancy_grid[new_loc[0], new_loc[1]] == 0:
                 free.add(tuple(new_loc))
         return free
     
-    def rrt_planner(self, goal: np.ndarray, start: np.ndarray) -> None:
+    def rrt(self, goal: np.ndarray, start: np.ndarray) -> None:
         """
         This function will generate a path from location start to location goal by using RRT. It will 
         generate a plan that avoids obstacles by planning over the provided map in self.map. Stores the
@@ -162,13 +157,17 @@ class Planners():
         path_found = False
         valid_set = {Node(start)}
         free_grid_points = np.argwhere(self.occupancy_grid == 0)
-        d = 5
+        d = 0.5
         tol = d*1.0
+        max_iterations = 1000
+        iteration = 0
+        path_found = False
+        path = None
 
         # Repeat RRT graph generation until goal reached
-        while not path_found:
+        while not path_found and iteration < max_iterations:
             # genereate random point in space, goal biased-parameter
-            if np.random.uniform() < 0.0:
+            if np.random.uniform() < 0.2:
                 pos_rand = goal
                 goal_sampled = True
             else:
@@ -201,7 +200,12 @@ class Planners():
             if np.linalg.norm(new_pos - goal) < tol:
                 path_found = True
                 print('path found')
-                self.extract_path_RRT(new_node)
+                path = self.extract_path_RRT(new_node)
+                path_found = True
+                break
+            
+            iteration += 1
+        return path_found, path
 
     def extract_path_RRT(self, final_node):
         node = final_node

@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as R
 
 class FaceForward():
     def __init__(self):
+        self.facing_forward = False
         self.prev_angular_z = 0
         self.kp = 1
         self.kd = 0.2
@@ -43,8 +44,16 @@ class FaceForward():
         # in case we are not moving the drone
         if np.isnan(omega_z):
             omega_z = 0
-            
+
+        # let the drone face motion direction before starting to move
+        if not self.facing_forward:
+            vx, vy = 0, 0
+
+        if abs(rotation_angle) < 0.5:
+            self.facing_forward = True
+
+        # publish angle command for debugging purposes
         self.debug_pub.publish(omega_z)
         self.prev_angular_z = omega_z
-        #publish angle command
-        return (vx, vy, vz), omega_z
+        
+        return self.facing_forward, (vx, vy, vz), omega_z

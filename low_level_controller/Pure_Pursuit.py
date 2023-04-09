@@ -10,7 +10,7 @@ class PurePursuit():
     def __init__(self, path=None, odom=None, pose=None, threshold=0):
         self.fly_cmd = Twist()
         self.lookahead = 3
-        self.speed = 0.5
+        self.speed = 1.5
         self.path = path
         self.path_segments = None
         self.pose = pose
@@ -30,6 +30,10 @@ class PurePursuit():
         self.point_pub = rospy.Publisher("/pursuit_point", PointStamped, queue_size=1)
         self.pose_pub = rospy.Publisher("/pp_pose", Point32, queue_size=1)
         self.stop = False
+
+        #waypoint constraints
+        self.waypoint_threshold = 0.3 # how close we need to be to the waypoint
+        self.pursuit_epsilon = 0.1 #allows us to satisfy |x_f - x_d| < waypoint_threshold
 
     # Compute Euclidean distance between 2 points
     def distance(self, point1, point2):
@@ -101,67 +105,70 @@ class PurePursuit():
         min_distances = np.apply_along_axis(self.minimum_distance(point), 1, self.path_segments)
         min_index = np.argmin(min_distances)
 
-        forward_path = self.path_segments[min_index:][::-1]
-        desired_point = self.path_segments[min_index][:2] # default desired point as endpoint of closest line segment of trajectory
-        # print(desired_point)
+        # no need to look ahead of only one path segment left, just to to the end
+        desired_point = self.path_segments[min_index][2:]
 
-        #potentially repace with somethiing much simpler. Maybe just take the first segment
+        # modulate speed if getting close to the waypoint
+        self.speed = 1.5 if len(self.path_segments) > 5 else 0.5
 
-        for i, segment in enumerate(forward_path):
-            # start and end points of each segment 
-            start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])
+        if len(self.path_segments) != 1:
+            forward_path = self.path_segments[min_index:][::-1]
 
-            V = end - start  # Vector along line segment
+            for i, segment in enumerate(forward_path):
+                # start and end points of each segment 
+                start, end = np.array([segment[0], segment[1]]), np.array([segment[2],segment[3]])
 
-            a = np.dot(V,V)
-            b = 2 * np.dot(V, start - point)
-            c = np.dot(start, start) + np.dot(point, point) - 2 * np.dot(start, point) - self.lookahead**2
+                V = end - start  # Vector along line segment
 
-            # Discriminant
-            disc = b**2 - 4*a*c
+                a = np.dot(V,V)
+                b = 2 * np.dot(V, start - point)
+                c = np.dot(start, start) + np.dot(point, point) - 2 * np.dot(start, point) - self.lookahead**2
 
-            if disc < 0: # no real solutions
-                continue 
+                # Discriminant
+                disc = b**2 - 4*a*c
 
-            sqrt_disc = np.sqrt(disc)
-            t1 = (-b + sqrt_disc) / (2 * a)
-            t2 = (-b - sqrt_disc) / (2 * a)
+                if disc < 0: # no real solutions
+                    continue 
 
-            if not (0 <= t1 <= 1 or 0 <= t2 <= 1):
-                continue
+                sqrt_disc = np.sqrt(disc)
+                t1 = (-b + sqrt_disc) / (2 * a)
+                t2 = (-b - sqrt_disc) / (2 * a)
 
-            t = max(0, min(1, - b / (2 * a)))
-            desired_point = start + t * V
-            min_index += len(forward_path) - i - 1
-            break
+                if not (0 <= t1 <= 1 or 0 <= t2 <= 1):
+                    continue
+
+                t = max(0, min(1, - b / (2 * a)))
+                desired_point = start + t * V
+                min_index += len(forward_path) - i - 1
+                break
 
         #FOR DEBUGGING
         self.point_pub.publish(self.createPoint(desired_point))
-        # print(desired_point)
         path_vector = desired_point - point
         new_yaw = np.arctan2(path_vector[1],path_vector[0])
-        eta = new_yaw #- pose[-1] 
+        eta = new_yaw
 
         #UPDATE DRONE POSITION 
         # obtain x and y components of eta to command movement
         # hard code flight speed for now (1)
         v_x = self.speed*np.cos(eta)
         v_y = self.speed*np.sin(eta)
-        # print(v_x, v_y)
 
         self.path_segments = self.path_segments[min_index:]
 
         #CHANGE LOOKAHEAD BASED ON CORNERS
-        if (len(self.path_segments) == 1 and self.distance(point, self.path_segments[-1][2:]) < self.lookahead):
+        # if eta < (np.pi/6): self.lookahead = 3.0
+        # else: self.lookahead = 1.5
+
+        # If close enough to waypoint, end iteration:
+        if self.distance(point, self.path_segments[-1][2:]) < self.waypoint_threshold:
             self.stop = True
-            return True, np.array([0, 0, 0])
+            return True,np.array([0,0,0])
 
-        if eta < (np.pi/6): self.lookahead = 3.0
-        else: self.lookahead = 1.5
-
-        #if env is too close to drone
+        '''Ground laser PD Control'''
+        # if env is too close to drone
         if self.within_threshold:
-            print('violated threshold')
+            print("violated threshold")
             v_z = self.threshold-self.ground_dist
         # nominal threshold present, control global z value
         else:

@@ -31,7 +31,7 @@ class FakeNavPub():
         self.rate = rate
         self.pub = rospy.Publisher('/waypoint_topic', Point, queue_size=1)
         self.sub = rospy.Subscriber('/ground_truth/state', Odometry, self.callback)
-        self.sub_nav = rospy.Subscriber('/done_travelling', Bool, self.done_callback)
+        self.sensor_placed_sub = rospy.Subscriber('/sensor_placed', Bool, self.done_callback)
         self.pub_next = False
         self.flight_height = 10
 
@@ -52,10 +52,7 @@ class FakeNavPub():
         if self.pub_next:
             self.waypoint_index += 1
             self.pub_next = False
-        # else:
-        #     self.pub.publish(point)
         self.rate.sleep()
-        # wrap relevant parts in a timer
 
     def done_callback(self, msg):
         if msg.data:
@@ -91,7 +88,7 @@ if __name__ == "__main__":
         # create the navigator object, pass in important mapping information
         rospy.init_node('fake_pub', anonymous=True)
         rate = rospy.Rate(1)
-        PUB = FakeNavPub(waypoints=test_waypoints, rate=rate)
+        PUB = FakeNavPub(waypoints=waypoints, rate=rate)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

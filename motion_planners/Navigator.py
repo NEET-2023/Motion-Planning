@@ -52,6 +52,7 @@ class Navigator():
         self.facing_forward = False
         # ROS relevant initializations
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        self.vel_pub_debug = rospy.Publisher('/cmd_vel_debug', Twist, queue_size=1)
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
         self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point, self.waypoint_callback)
@@ -76,10 +77,14 @@ class Navigator():
         """
         self.waypoint = np.array([msg.x, msg.y, self.flight_height])
         if not np.all(self.last_waypoint == self.waypoint):
+            print("New Waypoint received! Initializaing variables")
+            self.initialize_hover = True
             self.done_travelling.data = False
             self.path_plan = True
             self.path_found = True
+            self.facing_forward = False
             self.last_waypoint = self.waypoint
+            self.finished_pub.publish(self.done_travelling)
 
     def occupancy_callback(self, msg):
         """
@@ -131,6 +136,7 @@ class Navigator():
         # no occupancy grid provided yet
         if self.occupancy_grid is None:
             print("No occupancy grid provided")
+            return
 
         pose = msg.pose.pose
         # determine where the drone is currently located
@@ -166,6 +172,7 @@ class Navigator():
                 # planner failed to find a path to the next waypoint. Stay in place
                 if self.path is None:
                     print("Failed to find path. Staying in place")
+                    # raise Exception
                     self.path_found = False
                     # Let the drone just stay in place
                     self.fly_cmd.linear.x=0
@@ -206,29 +213,32 @@ class Navigator():
             self.done_travelling.data, v_world = self.llc.actuate()
             self.prev_v_world = v_world
 
+            ########################################
+            # self.facing_forward to make drone face 
+            # direction of movement before moving
+            ########################################
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
-            v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
-            #######################################################
-            # potentailly face motion direction first and then move
-            #######################################################
+            self.ffc.facing_forward = self.facing_forward
+            self.facing_forward, v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
 
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
             self.prev_angular_z = omega_z
-            self.vel_pub.publish(self.fly_cmd)
-
+            # self.vel_pub.publish(self.fly_cmd)
+            self.vel_pub_debug.publish(self.fly_cmd)
+            
         # all waypoints reached, no need to do anything anymore
         else:
             if not self.path_found:
                 print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
-                return False
+                # return False
             else:
                 print("Reached Waypoint!")
                 self.done_travelling.data = True
-                self.finished_pub.publish(self.done_travelling.data)
-                rate.sleep()
-                return True
+        
+        # indicate whether we are done travelling or not
+        self.finished_pub.publish(self.done_travelling.data)
 
     def range_callback(self, msg) -> None:
         """
