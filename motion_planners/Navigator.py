@@ -209,19 +209,14 @@ class Navigator():
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
+            #######################################################
             # potentailly face motion direction first and then move
-            
+            #######################################################
 
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
             self.prev_angular_z = omega_z
             self.vel_pub.publish(self.fly_cmd)
-
-            # print(f"v_x: {self.fly_cmd.linear.x}")
-            # print(f"v_y: {self.fly_cmd.linear.y}")
-            # print(f"v_z: {self.fly_cmd.linear.z}")
-            # print(f"omega_z: {self.fly_cmd.angular.z}")
-            # print(self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z, self.fly_cmd.angular.z)
 
         # all waypoints reached, no need to do anything anymore
         else:
