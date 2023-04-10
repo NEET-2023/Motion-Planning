@@ -225,8 +225,8 @@ class Navigator():
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
             self.prev_angular_z = omega_z
-            # self.vel_pub.publish(self.fly_cmd)
-            self.vel_pub_debug.publish(self.fly_cmd)
+            self.vel_pub.publish(self.fly_cmd)
+            # self.vel_pub_debug.publish(self.fly_cmd)
             
         # all waypoints reached, no need to do anything anymore
         else:
