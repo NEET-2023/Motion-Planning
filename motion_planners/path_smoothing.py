@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as interpolate
 from math import comb
 
-def b_spline_path(path: list, n_path_points: int, degree: int = 3, s=None) -> tuple:
+def b_spline_path(path: list, n_path_points: int, degree: int = 3, s=None, viz=False) -> tuple:
     """
     Approximate points with a B-Spline path
 
@@ -51,13 +51,14 @@ def b_spline_path(path: list, n_path_points: int, degree: int = 3, s=None) -> tu
     path = np.array((rix, riy, riz)).T
 
     # Plotting the smoothed path for debugging
-    # pltx = [x[0] for i, x in enumerate(path)]
-    # plty = [x[1] for i, x in enumerate(path)]
-    # pltz = [x[2] for i, x in enumerate(path)]
-    # ax = plt.axes(projection='3d')
-    # ax.plot3D(pltx, plty, pltz, 'gray')
-    # ax.scatter3D(x, y, z, cmap='Greens')
-    # plt.show()
+    if viz:
+        pltx = [x[0] for i, x in enumerate(path)]
+        plty = [x[1] for i, x in enumerate(path)]
+        pltz = [x[2] for i, x in enumerate(path)]
+        ax = plt.axes(projection='3d')
+        ax.plot3D(pltx, plty, pltz, 'gray')
+        ax.scatter3D(x, y, z, cmap='Greens')
+        plt.show()
 
     return path
 

@@ -1,8 +1,7 @@
 import rospy
-import cv2
+import cv2, sys, os
 import numpy as np
 import skimage.measure
-import sys
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
@@ -10,7 +9,7 @@ from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Header, Bool
 from planners import Planners
-sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning/')
+sys.path.insert(0, os.getcwd()[:-15])
 from low_level_controller.PD import PD
 from low_level_controller.Pure_Pursuit import PurePursuit
 from low_level_controller.Face_Forward import FaceForward
