@@ -203,7 +203,7 @@ class Navigator():
 
                 # some RVIZ visualizations for our sake
                 print(f"Drone found the following route: {self.path}")
-                self.vis_paths_image(self.path)
+                # self.vis_paths_image(self.path)
                 self.publish_path_rviz(self.path)
                 self.path_index = 0   
 

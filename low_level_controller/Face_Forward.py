@@ -11,6 +11,7 @@ class FaceForward():
         self.kd = 0.2
         self.rotation_pub_debug = rospy.Publisher('/rotation_angle', Float32, queue_size=1)
         self.vel_pub_debug = rospy.Publisher('/vel_angle', Float32, queue_size=1)
+        self.yaw_pub_debug = rospy.Publisher('yaw_angle', Float32, queue_size=1)
 
     def face_forward_control(self, velocity: np.ndarray, pose):
         '''
@@ -43,6 +44,7 @@ class FaceForward():
         rotation_angle = ((velocity_angle*(180/np.pi) - yaw_world*(180/np.pi) + 180) % 360 - 180) * np.pi/180
 
         # dubugging publishers
+        self.yaw_pub_debug.publish(yaw_world)
         self.vel_pub_debug.publish(velocity_angle)
         self.rotation_pub_debug.publish(rotation_angle)
 
