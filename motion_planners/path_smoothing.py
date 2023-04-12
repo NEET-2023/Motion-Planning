@@ -36,41 +36,43 @@ def b_spline_path(path: list, n_path_points: int, degree: int = 3, s=None) -> tu
         curvature of the result path
 
     """
-    x = [x[0] for i, x in enumerate(path) if i % 5 == 0]
-    y = [x[1] for i, x in enumerate(path) if i % 5 == 0]
-    z = [path[0][2] for _ in range(n_path_points)]
-
-    distances = _calc_distance_vector(x, y)
+    x = [x[0] for i, x in enumerate(path)]
+    y = [x[1] for i, x in enumerate(path)]
+    z = [x[2] for i, x in enumerate(path)]
+    distances = _calc_distance_vector(x, y, z)
 
     spl_i_x = interpolate.UnivariateSpline(distances, x, k=degree, s=s)
     spl_i_y = interpolate.UnivariateSpline(distances, y, k=degree, s=s)
+    spl_i_z = interpolate.UnivariateSpline(distances, z, k=degree, s=s)
 
     sampled = np.linspace(0.0, distances[-1], n_path_points)
-    rix, riy, heading, curvature = _evaluate_spline(sampled, spl_i_x, spl_i_y)
+    rix, riy, riz = _evaluate_spline(sampled, spl_i_x, spl_i_y, spl_i_z)
 
-    path = np.array((rix, riy, z)).T
-    return path, heading, curvature
+    path = np.array((rix, riy, riz)).T
 
-def _calc_distance_vector(x, y):
-    dx, dy = np.diff(x), np.diff(y)
-    distances = np.cumsum([np.hypot(idx, idy) for idx, idy in zip(dx, dy)])
+    # Plotting the smoothed path for debugging
+    # pltx = [x[0] for i, x in enumerate(path)]
+    # plty = [x[1] for i, x in enumerate(path)]
+    # pltz = [x[2] for i, x in enumerate(path)]
+    # ax = plt.axes(projection='3d')
+    # ax.plot3D(pltx, plty, pltz, 'gray')
+    # ax.scatter3D(x, y, z, cmap='Greens')
+    # plt.show()
+
+    return path
+
+def _calc_distance_vector(x, y, z):
+    dx, dy, dz = np.diff(x), np.diff(y), np.diff(z)
+    distances = np.cumsum([np.sqrt(idx**2 + idy**2 + idz**2) for idx, idy, idz in zip(dx, dy, dz)])
     distances = np.concatenate(([0.0], distances))
     distances /= distances[-1]
     return distances
 
-def _evaluate_spline(sampled, spl_i_x, spl_i_y):
+def _evaluate_spline(sampled, spl_i_x, spl_i_y, spl_i_z):
     x = spl_i_x(sampled)
     y = spl_i_y(sampled)
-    dx = spl_i_x.derivative(1)(sampled)
-    dy = spl_i_y.derivative(1)(sampled)
-    heading = np.arctan2(dy, dx)
-    ddx = spl_i_x.derivative(2)(sampled)
-    ddy = spl_i_y.derivative(2)(sampled)
-    curvature = (ddy * dx - ddx * dy) / np.power(dx * dx + dy * dy, 2.0 / 3.0)
-    return np.array(x), y, heading, curvature
-
-
-import matplotlib.pyplot as plt
+    z = spl_i_z(sampled)
+    return np.array(x), np.array(y), np.array(z)
 
 
 def bezier_path(control_points, n_points=100):
@@ -109,3 +111,8 @@ def bernstein_poly(n, i, t):
     :return: (float)
     """
     return comb(n, i) * t ** i * (1 - t) ** (n - i)
+
+
+if __name__ == '__main__':
+    path = np.load('generated_path.npy')
+    b_spline_path(path, len(path), s=5)

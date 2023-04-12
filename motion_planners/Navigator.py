@@ -14,6 +14,7 @@ sys.path.insert(0, '/home/frankgon/catkin_ws/src/Motion-Planning/')
 from low_level_controller.PD import PD
 from low_level_controller.Pure_Pursuit import PurePursuit
 from low_level_controller.Face_Forward import FaceForward
+from path_smoothing import b_spline_path
 
 class Navigator():
     def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, rate: rospy.Rate, waypoint = None, debug=False):
@@ -181,6 +182,9 @@ class Navigator():
                     self.fly_cmd.angular.z = 0
                     self.vel_pub.publish(self.fly_cmd)
                     return
+                
+                #Path Smoothing Step Using B-Spline Interpolation
+                self.path = b_spline_path(self.path, len(path), s=5)
                 
                 # pass the path information into the low level controller
                 self.llc.path = self.path
