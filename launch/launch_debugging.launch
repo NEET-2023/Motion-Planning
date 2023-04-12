@@ -1,0 +1,5 @@
+<launch>
+    <node name = "place_sensor" pkg = "low_level_controller" type = "place_sensor.py" output = "screen"></node>
+    <node name = "navigator" pkg = "motion_planners" type = "navigator.py" output = "screen"></node>
+    <node name = "waypoint_pub" pkg = "motion_planners" type = "fake_nav_pub.py" output = "screen"></node>
+</launch>
