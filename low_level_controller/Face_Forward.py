@@ -37,14 +37,15 @@ class FaceForward():
         a = np.array([1,0])
         # make velocity_angle pos or neg depending on cross product result
         velocity_angle = np.sign(np.cross(a, velocity[:2]))*np.arccos(np.dot(a, velocity[:2])/(np.linalg.norm(a)*np.linalg.norm(velocity[:2]))) % (2*np.pi)
-        # angle to rotate
-        rotation_angle = velocity_angle - yaw_world
+        # shortest angluar distance to rotate
+        # rotation_angle = velocity_angle - yaw_world
+        rotation_angle = ((velocity_angle*(180/np.pi) - yaw_world*(180/np.pi) + 180) % 360 - 180) * np.pi/180
         # set the yaw rate to realign the drone
         omega_z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
         # in case we are not moving the drone
         if np.isnan(omega_z):
             omega_z = 0
-
+    
         # let the drone face motion direction before starting to move
         if not self.facing_forward:
             vx, vy = 0, 0
