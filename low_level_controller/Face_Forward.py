@@ -9,7 +9,8 @@ class FaceForward():
         self.prev_angular_z = 0
         self.kp = 1
         self.kd = 0.2
-        self.debug_pub = rospy.Publisher('/rotation_angle', Float32, queue_size=1)
+        self.rotation_pub_debug = rospy.Publisher('/rotation_angle', Float32, queue_size=1)
+        self.vel_pub_debug = rospy.Publisher('/vel_angle', Float32, queue_size=1)
 
     def face_forward_control(self, velocity: np.ndarray, pose):
         '''
@@ -40,6 +41,11 @@ class FaceForward():
         # shortest angluar distance to rotate
         # rotation_angle = velocity_angle - yaw_world
         rotation_angle = ((velocity_angle*(180/np.pi) - yaw_world*(180/np.pi) + 180) % 360 - 180) * np.pi/180
+
+        # dubugging publishers
+        self.vel_pub_debug.publish(velocity_angle)
+        self.rotation_pub_debug.publish(rotation_angle)
+
         # set the yaw rate to realign the drone
         omega_z = (self.kp*rotation_angle - self.kd*self.prev_angular_z)
         # in case we are not moving the drone
@@ -54,7 +60,6 @@ class FaceForward():
             self.facing_forward = True
 
         # publish angle command for debugging purposes
-        self.debug_pub.publish(omega_z)
         self.prev_angular_z = omega_z
         
         return self.facing_forward, (vx, vy, vz), omega_z
