@@ -1,0 +1,185 @@
+import rospy
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+from std_msgs.msg import Bool
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Range
+from geometry_msgs.msg import Twist, PoseStamped
+
+
+class PlaceSensor():
+    def __init__(self, rate):
+        # Height control information
+        self.descent_height = 2
+        self.flight_height = 10
+        self.fly_cmd = Twist()
+        self.ground_dist = 0
+        self.pose = None
+
+        # pod state information
+        self.gripper_location_drone = np.array([0, 0, -0.1]) # gripper relative to the drone
+        self.pod_location_drone = np.array([0, 0, 0]) # pod relative to the drone initialization
+        self.pod_location_world = np.array([0, 0, 0]) # pod relative to the world initialization
+        self.pickup_point_pod = np.array([0, 0, 0.2]) # pickup point relative to the pod
+
+        # ROS state machine variables 
+        self.done_travelling_sub = rospy.Subscriber('/done_travelling', Bool, self.done_travelling_callback)
+        self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback)
+        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.pickup_callback)
+        # ROS drone state information
+        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
+        self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
+        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+        # ROS pod state information
+        self.pod_location_sub = rospy.Subscriber('/pod_location', PoseStamped, self.pod_location_callback)
+        # ROS states to be published
+        self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
+        self.retrived_pub = rospy.Publisher('/sensor_retrieved', Bool, queue_size=1)
+
+        self.rate = rate
+
+        # boolean flag conditions
+        self.done_travelling = False
+
+    def done_travelling_callback(self, msg: Bool) -> None:
+        """
+        Stores the boolean of whether we are at the end of our trajectory
+
+        Parameters:
+        finised (Bool): a boolean flag which tells us if we made it to the waypoint
+
+        Returns: 
+        None
+        """
+
+        self.done_travelling = msg.data
+
+    def range_callback(self, msg) -> None:
+        """
+        Provides the distance to ground information from the 1D LIDAR
+
+        Parameters:
+        msg (Range): Range object containing distance to ground data
+
+        Returns:
+        None
+        """
+        self.ground_dist = msg.range
+
+    def odom_callback(self, msg: Odometry) -> None:
+        """
+        Simply takes in the odometry message and extracts the pose
+
+        Parameters:
+        msg (Odometry): contains odometry information
+
+        Returns:
+        None
+        """
+        self.pose = msg.pose.pose
+
+    def pod_location_callback(self, msg: PoseStamped) -> None:
+        """
+        Callback function that stores the location of the sensor pod relative to the
+        position of the drone
+
+        Parameters:
+        msg (PoseStamped): Contains pose information about the sensor pod
+
+        Returns:
+        None
+        """
+        self.pod_location_drone = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+
+    def place_callback(self, msg: Bool) -> None:
+        """
+        Callback function that determines if we are in the state of placing a sensor
+        LLC to place a sensor takes over sending velocity commands.
+
+        Controls the drone to move directly downwards towards a specified height off the ground. 
+        Once done, it indicates so by publishiing placed_msg
+        ^^ PLACEHOLDER FUNCTIONALITY
+
+
+        Parameters:
+        msg (Bool): The boolean flag that tells us if we are to place a sensor
+
+        Returns: 
+        None
+        """
+        if msg.data and self.done_travelling:
+            # determine where the drone is currently located
+            within_threshold = abs(self.ground_dist - self.descent_height) < 0.1
+            if not within_threshold:
+                print("Going down")
+            
+            # bring the drone down to the sensor drop height
+            self.fly_cmd.linear.x = 0
+            self.fly_cmd.linear.y = 0
+            self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.descent_height - self.ground_dist)
+            self.vel_pub.publish(self.fly_cmd)
+            
+            # condition to have the drone hover at the dropoff spot to simulate sensor placement
+            if within_threshold:
+                placed_msg = Bool()
+                placed_msg.data = True
+                print("Placed Sensor")
+                self.placed_pub.publish(placed_msg)
+                self.rate.sleep()
+
+    def pickup_callback(self, msg: Bool) -> None:
+        """
+        Callback function that determines if we are in the state of picking up a sensor
+        LLC to pickup a sensor takes over sending velocity commands.
+
+        FUNCTIONALITY TO BE IMPLEMENTED
+
+        Parameters:
+        msg (Bool): The boolean flag that tells us if we are to pickup a sensor
+
+        Returns: 
+        None
+        """
+        testing = True
+        # only execute if we have finished traveling and if we are 
+        if msg.data and self.done_travelling:
+
+            # pod location relative to the drone
+            if testing:
+                # for testing, allow the pod to be anwhere in the circle with radius 0.5 m
+                self.pod_location_drone = np.array([np.random.random()/2, np.random.random()/2, -(self.ground_dist - 0.05)])
+            
+            # convert the sensor pod location into world coordinates
+            quaternion = self.pose.orientation
+            r = R.from_quat([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
+            yaw_world = r.as_euler('xyz')[2] % (2*np.pi) # drone yaw in world frame between (0, 2*pi)
+            pod_x_world = self.pod_location_drone[0]*np.cos(yaw_world) - self.pod_location_drone[1]*np.sin(yaw_world)
+            pod_y_world = self.pod_location_drone[0]*np.sin(yaw_world) + self.pod_location_drone[1]*np.cos(yaw_world)
+
+            # save the location into a class variable that gets updated for accuracy purposes
+            self.pod_location_world = np.array([pod_x_world, pod_y_world, self.pod_location_drone[2]])
+
+            # determine error between the sensor pod + epsilon height and the 
+            # "anchor point" of the drone. "Anchor Point" is just some offset 
+            # from the drone position
+
+            # if error within some extremely small tolerance, cmd zero velocity
+            # and indicate we have "placed the drone". Otherwise:
+            
+            # create linear interpolation between the anchor point and the pod
+            # + epsilon height
+
+            # Low gain PD controller to move the anchor point to the pod + epsilon 
+            # height
+
+            # publish velocity to /cmd_vel topic
+            pass  
+
+if __name__ ==  "__main__":
+    try:
+        rospy.init_node('Place_Sensor', anonymous=True)
+        rate = rospy.Rate(0.5)
+        PS = PlaceSensor(rate)
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass

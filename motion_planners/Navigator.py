@@ -216,10 +216,6 @@ class Navigator():
             self.done_travelling.data, v_world = self.llc.actuate()
             self.prev_v_world = v_world
 
-            ########################################
-            # self.facing_forward to make drone face 
-            # direction of movement before moving
-            ########################################
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             self.ffc.facing_forward = self.facing_forward
@@ -235,7 +231,6 @@ class Navigator():
         else:
             if not self.path_found:
                 print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
-                # return False
             else:
                 print("Reached Waypoint!")
                 self.done_travelling.data = True
