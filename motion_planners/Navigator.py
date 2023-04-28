@@ -16,16 +16,15 @@ from low_level_controller.Face_Forward import FaceForward
 from path_smoothing import b_spline_path
 
 class Navigator():
-    def __init__(self, algo: str, occupancy_grid: np.ndarray, world_dims: tuple, rate: rospy.Rate, waypoint = None, debug=False):
+    def __init__(self, algo: str, rate: rospy.Rate, world_dims: tuple, occupancy_grid: np.ndarray = None):
         # Map inforation intializations
         self.occupancy_grid = occupancy_grid
-        self.max_row, self.max_col = np.array(occupancy_grid.shape) - 1
         self.ground_dist = 0
         self.flight_height = 10
         self.world_dims = world_dims
         self.max_z = 100 
         # Tracking of which waypoint/point in path we are following
-        self.waypoint = waypoint 
+        self.waypoint = None 
         self.done_travelling = Bool()
         self.done_travelling.data = False
         self.path_plan = True
@@ -34,10 +33,11 @@ class Navigator():
         self.path_index = 0
         self.last_waypoint = None
         # Planner
-        self.planner = Planners(algo, world_dims, occupancy_grid, self.flight_height)
+        self.algo = algo
+        self.planner = None
         # Low Level Controllers
-        # self.llc = PD()
-        self.llc = PurePursuit()
+        self.llc = None
+        self.llc_type = None
         self.ffc = FaceForward()
         # PD controller initializations
         self.kp = 1.0
@@ -89,7 +89,7 @@ class Navigator():
     def occupancy_callback(self, msg):
         """
         Create a 2D occpancy grid from the provided 1D list of blocking probabilities. Assumes a value of 
-        0 means the space is open.
+        0 means the space is open. Also initializes several other necessary variables for algorithms to work.
 
         Parameters:
         msg (OccupancyGrid): has one attribute called data which contains the blocking probabilities
@@ -99,7 +99,10 @@ class Navigator():
         """
         occupancies = msg.data
         size = len(occupancies)
-        self.occupancy_grid = np.array(occupancies).reshape((size**0.5, size**0.5))
+        root = int(size**0.5)
+        self.occupancy_grid = np.array(occupancies).reshape((root, root))
+        self.max_row, self.max_col = np.array(self.occupancy_grid.shape) - 1
+        self.planner = Planners(self.algo, self.world_dims, self.occupancy_grid, self.flight_height)
 
     def load_environmental_map(self, path):
         """
@@ -135,7 +138,7 @@ class Navigator():
             return
         # no occupancy grid provided yet
         if self.occupancy_grid is None:
-            print("No occupancy grid provided")
+            # print("No occupancy grid provided")
             return
 
         pose = msg.pose.pose
@@ -182,23 +185,26 @@ class Navigator():
                     self.vel_pub.publish(self.fly_cmd)
                     return
                 
-                #Path Smoothing Step Using B-Spline Interpolation
-                self.path = b_spline_path(self.path, len(path), s=5)
+                # check if path has only one point, if so use PD
+                self.llc_type = "PD" if len(self.path) == 1 else "PP"
                 
-                # pass the path information into the low level controller
-                self.llc.path = self.path
-                if self.llc.type == "PD": 
+                # initialize the LLC and pass in relevant information
+                # PD relevant initializations
+                if self.llc_type == "PD": 
+                    self.llc = PD()
                     self.llc.path_index = 0
-                # CURRENT BUGS WITH PP
-                # 1. PP STOPS DISTANCE LOOK_AHEAD FROM WAYPOINT
-                # 2. SOMETIMES DRONE FREAKS OUT AND I HAVE NO IDEA WHY
-                elif self.llc.type == "PP": 
+                # Pure Pursuit relevant initializations
+                elif self.llc_type == "PP": 
+                    self.llc = PurePursuit()
+                    # Path Smoothing Step Using B-Spline Interpolation
+                    self.path = b_spline_path(self.path, len(path), s=5)
                     self.llc.stop = False
                     self.llc.path_segments = np.array([[self.path[i][0], 
                                                         self.path[i][1], 
                                                         self.path[i+1][0], 
                                                         self.path[i+1][1]] 
                                                         for i in range(len(self.path)-1)])
+                self.llc.path = self.path
                 self.path_plan = False
 
                 # some RVIZ visualizations for our sake
@@ -367,7 +373,8 @@ if __name__ == "__main__":
         # create the navigator object, pass in important mapping information
         rospy.init_node('Planner', anonymous=True)
         rate = rospy.Rate(0.5)
-        NAV = Navigator('a_star', dilated_ococupancy, world_dims, rate, waypoint=None)
+        # NAV = Navigator('a_star', rate, dilated_ococupancy, world_dims, waypoint=None)
+        NAV = Navigator('a_star', rate, world_dims)
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

@@ -18,6 +18,7 @@ class PlaceSensor():
 
         # pod state information
         self.gripper_location_drone = np.array([0, 0, -0.1]) # gripper relative to the drone
+        self.gripper_location_world = np.array([0, 0, 0]) # gripper relative to the world
         self.pod_location_drone = np.array([0, 0, 0]) # pod relative to the drone initialization
         self.pod_location_world = np.array([0, 0, 0]) # pod relative to the world initialization
         self.pickup_point_pod = np.array([0, 0, 0.2]) # pickup point relative to the pod
@@ -40,6 +41,12 @@ class PlaceSensor():
 
         # boolean flag conditions
         self.done_travelling = False
+        
+        #placement tolerance
+        self.location_tolerance = 0.05
+        
+        #placement flag
+        self.picked = False
 
     def done_travelling_callback(self, msg: Bool) -> None:
         """
@@ -132,7 +139,8 @@ class PlaceSensor():
         Callback function that determines if we are in the state of picking up a sensor
         LLC to pickup a sensor takes over sending velocity commands.
 
-        FUNCTIONALITY TO BE IMPLEMENTED
+        Determines the locaion of the sensor pod in world coordinates and actuates the
+        gripper to a pickup location relative to the pod.
 
         Parameters:
         msg (Bool): The boolean flag that tells us if we are to pickup a sensor
@@ -156,25 +164,46 @@ class PlaceSensor():
             pod_x_world = self.pod_location_drone[0]*np.cos(yaw_world) - self.pod_location_drone[1]*np.sin(yaw_world)
             pod_y_world = self.pod_location_drone[0]*np.sin(yaw_world) + self.pod_location_drone[1]*np.cos(yaw_world)
 
-            # save the location into a class variable that gets updated for accuracy purposes
+            # save the pod location relative to the world
             self.pod_location_world = np.array([pod_x_world, pod_y_world, self.pod_location_drone[2]])
+
+            # calculate the location of the gripper with respect to the drone in world coordinates
+            gripper_x_world = self.gripper_location_drone[0]*np.cos(yaw_world) - self.gripper_location_drone[1]*np.sin(yaw_world)
+            gripper_y_world = self.gripper_location_drone[0]*np.sin(yaw_world) + self.gripper_location_drone[1]*np.cos(yaw_world)
+
+            # save the gripper location relative to the world
+            self.gripper_location_world = np.array([gripper_x_world, gripper_y_world, self.gripper_location_drone[2]])
 
             # determine error between the sensor pod + epsilon height and the 
             # "anchor point" of the drone. "Anchor Point" is just some offset 
             # from the drone position
+            motion_vector = self.gripper_location_drone - self.pod_location_world
 
             # if error within some extremely small tolerance, cmd zero velocity
             # and indicate we have "placed the drone". Otherwise:
-            
-            # create linear interpolation between the anchor point and the pod
-            # + epsilon height
+            if np.linalg.norm(motion_vector) < self.location_tolerance:
+                self.fly_cmd = self.direct_pickup()
+            # decompose the 3D motion vector to determine velocity actuations
+            else:
+                norm = np.linalg.norm(motion_vector)
+                if norm == 0:
+                    self.fly_cmd.x = 0
+                    self.fly_cmd.y = 0
+                    self.fly_cmd.z = 0
+                else:
+                    self.fly_cmd.x, self.fly_cmd.y, self.fly_cmd.z = motion_vector/norm * self.fly_speed
+                    
+                # publish velocity to /cmd_vel topic
+                self.vel_pub.publish(self.fly_cmd)
 
-            # Low gain PD controller to move the anchor point to the pod + epsilon 
-            # height
+    def direct_pickup(self):
+        '''
+        Assumes drone is directly on top of the sensor. From this position, moves the drone directly down(z)
+        '''
+        self.fly_cmd = -self.pickup_point_pod[2]
+        self.picked = True
 
-            # publish velocity to /cmd_vel topic
-            pass  
-
+    
 if __name__ ==  "__main__":
     try:
         rospy.init_node('Place_Sensor', anonymous=True)
