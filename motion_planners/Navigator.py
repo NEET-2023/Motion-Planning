@@ -72,8 +72,14 @@ class Navigator():
 
     def waypoint_callback(self, msg: Point) -> None:
         """
-        Task-Planning will provide the waypoints we are to follow. This function will override the waypoint 
+        Task-Planning will provide the waypoints we need to follow. This function will override the waypoint 
         we are interested in planning and set the necessary flags in order to proceed properly.
+
+        Parameters:
+        msg (Point): global x and y coordinates of the waypoint
+
+        Returns:
+        None
         """
         self.waypoint = np.array([msg.x, msg.y, self.flight_height])
         if not np.all(self.last_waypoint == self.waypoint):
@@ -138,7 +144,7 @@ class Navigator():
             return
         # no occupancy grid provided yet
         if self.occupancy_grid is None:
-            # print("No occupancy grid provided")
+            print("No occupancy grid provided")
             return
 
         pose = msg.pose.pose
@@ -175,7 +181,6 @@ class Navigator():
                 # planner failed to find a path to the next waypoint. Stay in place
                 if self.path is None:
                     print("Failed to find path. Staying in place")
-                    # raise Exception
                     self.path_found = False
                     # Let the drone just stay in place
                     self.fly_cmd.linear.x=0
