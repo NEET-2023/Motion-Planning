@@ -34,7 +34,7 @@ class PlaceSensor():
         self.pod_location_sub = rospy.Subscriber('/pod_location', PoseStamped, self.pod_location_callback)
         # ROS states to be published
         self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
-        self.retrived_pub = rospy.Publisher('/sensor_retrieved', Bool, queue_size=1)
+        self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
 
         self.rate = rate
         
