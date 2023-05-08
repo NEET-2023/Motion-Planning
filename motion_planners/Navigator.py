@@ -90,7 +90,6 @@ class Navigator():
             self.path_found = True
             self.facing_forward = False
             self.last_waypoint = self.waypoint
-            self.finished_pub.publish(self.done_travelling)
 
     def occupancy_callback(self, msg):
         """
@@ -188,10 +187,11 @@ class Navigator():
                     self.fly_cmd.linear.z=0
                     self.fly_cmd.angular.z = 0
                     self.vel_pub.publish(self.fly_cmd)
+                    self.vis_goal_point()
                     return
                 
                 # check if path has only one point, if so use PD
-                self.llc_type = "PD" if len(self.path) == 1 else "PP"
+                self.llc_type = "PD" if len(self.path) < 4 else "PP"
                 
                 # initialize the LLC and pass in relevant information
                 # PD relevant initializations
@@ -241,7 +241,8 @@ class Navigator():
         # all waypoints reached, no need to do anything anymore
         else:
             if not self.path_found:
-                print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
+                pass
+                # print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
             else:
                 print("Reached Waypoint!")
                 self.done_travelling.data = True
@@ -266,6 +267,18 @@ class Navigator():
         
         #if height is below threshold, increase the height of the 
         self.within_threshold = self.ground_dist < self.threshold
+
+    def vis_goal_point(self) -> None:
+        goal = self.waypoint[:2]
+        goal_pixel = meters_to_grid(self.world_dims, self.max_row, self.max_col, goal[0], goal[1])
+        new_grid = self.occupancy_grid
+        for i in range(-5, 5):
+            for j in range(-5, 5):
+                new_grid[goal_pixel[0] + i, goal_pixel[1] + j] = 100
+        cv2.imshow('new grid', new_grid.astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
 
     def vis_paths_image(self, path: list) -> None:
         """

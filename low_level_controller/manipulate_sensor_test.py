@@ -25,7 +25,7 @@ class PlaceSensor():
 
         # ROS state machine variables 
         self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback)
-        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.place_callback) # CHANGE CALLBACK BACK
+        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.pickup_callback) 
         # ROS drone state information
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
@@ -115,7 +115,6 @@ class PlaceSensor():
                 placed_msg.data = True
                 print("Placed Sensor")
                 self.placed_pub.publish(placed_msg)
-                self.rate.sleep()
 
     def pickup_callback(self, msg: Bool) -> None:
         """
@@ -146,11 +145,10 @@ class PlaceSensor():
             
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
             if within_threshold:
-                placed_msg = Bool()
-                placed_msg.data = True
-                print("Pickedup Sensor")
-                self.placed_pub.publish(placed_msg)
-                self.rate.sleep()
+                picked_msg = Bool()
+                picked_msg.data = True
+                print("Picked up Sensor")
+                self.retrived_pub.publish(picked_msg)
 
 if __name__ ==  "__main__":
     try:
