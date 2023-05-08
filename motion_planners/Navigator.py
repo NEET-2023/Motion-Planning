@@ -35,6 +35,8 @@ class Navigator():
         # Planner
         self.algo = algo
         self.planner = None
+        # Pose initialization
+        self.pose = None
         # Low Level Controllers
         self.llc = None
         self.llc_type = None
@@ -70,28 +72,19 @@ class Navigator():
         # rate parameters
         self.rate = rate
 
-    def waypoint_callback(self, msg: Point) -> None:
+    def odom_callback(self, msg: Odometry) -> None:
         """
-        Task-Planning will provide the waypoints we need to follow. This function will override the waypoint 
-        we are interested in planning and set the necessary flags in order to proceed properly.
+        Saves in the odometry for the drone to conduct its planning
 
         Parameters:
-        msg (Point): global x and y coordinates of the waypoint
+        msg (Odometry): pose information of the drone
 
         Returns:
         None
         """
-        self.waypoint = np.array([msg.x, msg.y, self.flight_height])
-        if not np.all(self.last_waypoint == self.waypoint):
-            print("New Waypoint received! Initializaing variables")
-            self.initialize_hover = True
-            self.done_travelling.data = False
-            self.path_plan = True
-            self.path_found = True
-            self.facing_forward = False
-            self.last_waypoint = self.waypoint
+        self.pose = msg.pose.pose
 
-    def occupancy_callback(self, msg):
+    def occupancy_callback(self, msg: OccupancyGrid) -> None:
         """
         Create a 2D occpancy grid from the provided 1D list of blocking probabilities. Assumes a value of 
         0 means the space is open. Also initializes several other necessary variables for algorithms to work.
@@ -109,47 +102,42 @@ class Navigator():
         self.max_row, self.max_col = np.array(self.occupancy_grid.shape) - 1
         self.planner = Planners(self.algo, self.world_dims, self.occupancy_grid, self.flight_height)
 
-    def load_environmental_map(self, path):
+    def waypoint_callback(self, msg: Point) -> None:
         """
-        Task-Planning will provide a map with height data for us to generate a path plan. This map will be
-        a descritization of the environment. There is a height limit we cannot surpass, therefore locations
-        with altitudes that exceed this limit will be considered "occupied"
-
-        Parameters:
-        path (string): path to location of saved map. Pressumably somewhere in Task-Planning
-
-        Returns:
-        None
-        """
-        pass
-
-    def odom_callback(self, msg: Odometry) -> None:
-        """
-        this callback function will take in the odometry to determine where we are in space. We will use
-        these to set the actuations in a PD controller for x, y, and z position
-
-        # Considerations: We now have height data. Do we control of the given height data, the laser sensor, 
-        combination of both? Theoretically we can penalize both, perhaps weight sensor data much more?
+        This callback function will take in the waypoint to determine where we want to plan. It will then 
+        generate a path and determine which LLC to use based on the path length. It also reports to Task
+        Planning once we have reached a waypoint
         
         Parameters:
-        msg (Odometry): odometry object containing the current pose of the drone
+        msg (Point): Point object containing the desired waypoint
 
         Returns: 
         None
         """ 
-        # no waypoints provided yet
-        if self.waypoint is None:
-            print("No waypoint provided")
-            return
+        self.waypoint = np.array([msg.x, msg.y, self.flight_height])
+        if not np.all(self.last_waypoint == self.waypoint):
+            print("New Waypoint received! Initializaing variables")
+            self.initialize_hover = True
+            self.done_travelling.data = False
+            self.path_plan = True
+            self.path_found = True
+            self.facing_forward = False
+            self.last_waypoint = self.waypoint
+
         # no occupancy grid provided yet
         if self.occupancy_grid is None:
             print("No occupancy grid provided")
             return
 
-        pose = msg.pose.pose
-        # determine where the drone is currently located
-        location = np.array([pose.position.x, pose.position.y, pose.position.z])
+        # no pose initialized yet
+        if self.pose is None:
+            print("We don't have pose information yet")
+            return
 
+        # determine where the drone is currently located
+        location = np.array([self.pose.position.x, self.pose.position.y, self.pose.position.z])
+
+        # bring the drone up to flight height before planning or actuating
         if self.initialize_hover:
             # bring the drone up to the flying plane before planning
             self.fly_cmd.linear.x = 0
@@ -162,7 +150,7 @@ class Navigator():
                 self.initialize_hover = False
             return
 
-        # only execute this logic if we haven't hit all waypoints yet
+        # only execute this logic if we have not reached the waypoint yet
         if not self.done_travelling.data and self.path_found:
             # if we need to plan a path, go ahead and do that
             if self.path_plan:
@@ -219,7 +207,7 @@ class Navigator():
                 self.path_index = 0   
 
             # Passes relevant information into a low-level controller to move the drone along the path
-            self.llc.pose = pose
+            self.llc.pose = self.pose
             self.llc.ground_dist = self.ground_dist
             self.llc.within_threshold = self.within_threshold
             self.llc.threshold = self.threshold
@@ -230,7 +218,7 @@ class Navigator():
             # second low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             self.ffc.facing_forward = self.facing_forward
-            self.facing_forward, v_drone, omega_z = self.ffc.face_forward_control(v_world, pose)
+            self.facing_forward, v_drone, omega_z = self.ffc.face_forward_control(v_world, self.pose)
 
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
@@ -241,8 +229,7 @@ class Navigator():
         # all waypoints reached, no need to do anything anymore
         else:
             if not self.path_found:
-                pass
-                # print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
+                print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
             else:
                 print("Reached Waypoint!")
                 self.done_travelling.data = True
