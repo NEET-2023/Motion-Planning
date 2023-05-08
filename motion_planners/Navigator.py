@@ -168,7 +168,7 @@ class Navigator():
                 if self.path is None:
                     print("Failed to find path. Staying in place")
                     self.path_found = False
-                    # Let the drone just stay in place
+                    # let the drone just stay in place
                     self.fly_cmd.linear.x=0
                     self.fly_cmd.linear.y=0
                     self.fly_cmd.linear.z=0
@@ -188,7 +188,7 @@ class Navigator():
                 # Pure Pursuit relevant initializations
                 elif self.llc_type == "PP": 
                     self.llc = PurePursuit()
-                    # Path Smoothing Step Using B-Spline Interpolation
+                    # path smoothing step using b-spline interpolation
                     self.path = b_spline_path(self.path, len(path), s=5)
                     self.llc.stop = False
                     self.llc.path_segments = np.array([[self.path[i][0], 
@@ -199,13 +199,13 @@ class Navigator():
                 self.llc.path = self.path
                 self.path_plan = False
 
-                # some RVIZ visualizations for our sake
+                # Visualize the drone path on rviz
                 print(f"Drone found the following route: {self.path}")
                 # self.vis_paths_image(self.path)
                 self.publish_path_rviz(self.path)
                 self.path_index = 0   
 
-            # Passes relevant information into a low-level controller to move the drone along the path
+            # passes relevant information into a low-level controller to move the drone along the path
             self.llc.pose = self.pose
             self.llc.ground_dist = self.ground_dist
             self.llc.within_threshold = self.within_threshold
@@ -214,18 +214,19 @@ class Navigator():
             self.done_travelling.data, v_world = self.llc.actuate()
             self.prev_v_world = v_world
 
-            # second low-level controller so the drone faces the direction of motion
+            # face forward low-level controller so the drone faces the direction of motion
             self.ffc.prev_angular_z = self.prev_angular_z
             self.ffc.facing_forward = self.facing_forward
             self.facing_forward, v_drone, omega_z = self.ffc.face_forward_control(v_world, self.pose)
 
+            # set the values for the velocity command
             self.fly_cmd.linear.x, self.fly_cmd.linear.y, self.fly_cmd.linear.z = v_drone
             self.fly_cmd.angular.z = omega_z
             self.prev_angular_z = omega_z
             self.vel_pub.publish(self.fly_cmd)
             # self.vel_pub_debug.publish(self.fly_cmd)
             
-        # all waypoints reached, no need to do anything anymore
+        # reached the waypoint or failed to find a path
         else:
             if not self.path_found:
                 print(f"We failed to find paths. We stopped at waypoint: {self.waypoint}")
@@ -236,12 +237,10 @@ class Navigator():
         # indicate whether we are done travelling or not
         self.finished_pub.publish(self.done_travelling.data)
 
-    def range_callback(self, msg) -> None:
+    def range_callback(self, msg: Range) -> None:
         """
-        View above docstring. TBD how we interface these two. Perhaps we shoot for the target z provided
-        in the waypoint, unless we see we are too close to the ground so we then switch the target_z to be 
-        controlled by the laser. Perhaps 1m buffer. I.e., aim to fly 2m above the ground, if we are less than
-        1m above the ground, then we let laser control take over. Boolean state?
+        Reads in the distance reported by the point LIDAR on the drone, providing us the 
+        distance to the ground.
 
         Parameters:
         msg (Range): Range object containing distance to ground data
@@ -251,16 +250,25 @@ class Navigator():
         """
         self.ground_dist = msg.range
         
-        #if height is below threshold, increase the height of the 
+        # if height is below threshold, increase the height of the 
         self.within_threshold = self.ground_dist < self.threshold
 
     def vis_goal_point(self) -> None:
+        """
+        Visualizes the location of the goal overlaid on the occupancy grid
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         goal = self.waypoint[:2]
         goal_pixel = meters_to_grid(self.world_dims, self.max_row, self.max_col, goal[0], goal[1])
         new_grid = self.occupancy_grid
-        for i in range(-5, 5):
-            for j in range(-5, 5):
-                new_grid[goal_pixel[0] + i, goal_pixel[1] + j] = 100
+        for i in range(-3, 3):
+            for j in range(-3, 3):
+                new_grid[goal_pixel[0] + i, goal_pixel[1] + j] = 150
         cv2.imshow('new grid', new_grid.astype(np.uint8))
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -318,7 +326,7 @@ class Navigator():
             marker.points.append(pt)
         self.traj_pub.publish(marker)
 
-# Functions for testing purposes
+# functions for testing purposes
 def grid_to_meters(world_dims: tuple, max_row: int, max_col: int, row: int, col: int) -> tuple:
     """
     Takes in a grid coordinate and returns a location in meters.
@@ -352,11 +360,8 @@ def meters_to_grid(world_dims: tuple, max_row: int, max_col: int, x: float, y: f
 if __name__ == "__main__":
     path = '../occupancy_grids/images/rolling_hills_map_10.png'
     occupancy_image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2GRAY)
-    # cv2.imshow("original occupancy", occupancy_image)
     reduced_occupancy = skimage.measure.block_reduce(occupancy_image, (5, 5), np.max)
-    # cv2.imshow('reduced occupancy', reduced_occupancy)
     dilated_ococupancy = cv2.dilate(reduced_occupancy, np.ones((7, 7), np.uint8))
-    # cv2.imshow('dilated occupancy', dilated_ococupancy)
 
     # xmin, xmax, ymin, ymax
     world_dims = (-100, 100, -100, 100)
