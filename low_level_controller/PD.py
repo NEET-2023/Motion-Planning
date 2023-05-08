@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 
 class PD():
     def __init__(self, path=None, pose=None, threshold=0):

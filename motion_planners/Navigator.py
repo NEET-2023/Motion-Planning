@@ -2,7 +2,6 @@ import rospy
 import cv2, sys, os
 import numpy as np
 import skimage.measure
-from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import Range
