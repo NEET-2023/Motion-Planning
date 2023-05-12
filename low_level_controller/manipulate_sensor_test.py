@@ -1,7 +1,8 @@
 import rospy
 import numpy as np
+import os
 from scipy.spatial.transform import Rotation as R
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int16
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
 from geometry_msgs.msg import Twist, PoseStamped
@@ -22,6 +23,7 @@ class PlaceSensor():
         self.pod_location_drone = np.array([0, 0, 0]) # pod relative to the drone initialization
         self.pod_location_world = np.array([0, 0, 0]) # pod relative to the world initialization
         self.pickup_point_pod = np.array([0, 0, 0.2]) # pickup point relative to the pod
+        self.pod_index = 0
 
         # ROS state machine variables 
         self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback)
@@ -32,6 +34,7 @@ class PlaceSensor():
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         # ROS pod state information
         self.pod_location_sub = rospy.Subscriber('/pod_location', PoseStamped, self.pod_location_callback)
+        self.pod_index_sub = rospy.Subscriber('/pod_index', Int16, self.pod_index_callback)
         # ROS states to be published
         self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
         self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
@@ -81,6 +84,11 @@ class PlaceSensor():
         """
         self.pod_location_drone = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
 
+    def pod_index_callback(self, msg: Int16) -> None:
+        """
+        """
+        self.pod_index = msg.data
+
     def place_callback(self, msg: Bool) -> None:
         """
         Callback function that determines if we are in the state of placing a sensor
@@ -113,6 +121,11 @@ class PlaceSensor():
             if within_threshold:
                 placed_msg = Bool()
                 placed_msg.data = True
+                x = self.pose.position.x
+                y = self.pose.position.y
+                z = self.pose.position.z - self.ground_dist + 1.5
+                directory = os.getcwd()[:-36] + 'sensor_pod/src'
+                os.system(f"rosrun gazebo_ros spawn_model -file {directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model my_object_{self.pod_index}")
                 print("Placed Sensor")
                 self.placed_pub.publish(placed_msg)
 

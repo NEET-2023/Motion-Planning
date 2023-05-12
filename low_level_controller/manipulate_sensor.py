@@ -1,5 +1,6 @@
 import rospy
 import numpy as np
+import os
 from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import Bool
 from nav_msgs.msg import Odometry
@@ -25,7 +26,7 @@ class PlaceSensor():
 
         # ROS state machine variables 
         self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback)
-        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.place_callback) # CHANGE CALLBACK BACK
+        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.pickup_callback) 
         # ROS drone state information
         self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
@@ -37,9 +38,12 @@ class PlaceSensor():
         self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
 
         self.rate = rate
-        
+
         #placement tolerance
         self.location_tolerance = 0.05
+
+        # directory to pod urdf
+        self.directory = os.getcwd()[:-36] + 'sensor_pod/src'
         
         #placement flag
         self.picked = False
@@ -83,13 +87,8 @@ class PlaceSensor():
 
     def place_callback(self, msg: Bool) -> None:
         """
-        Callback function that determines if we are in the state of placing a sensor
-        LLC to place a sensor takes over sending velocity commands.
-
         Controls the drone to move directly downwards towards a specified height off the ground. 
         Once done, it indicates so by publishiing placed_msg
-        ^^ PLACEHOLDER FUNCTIONALITY
-
 
         Parameters:
         msg (Bool): The boolean flag that tells us if we are to place a sensor
@@ -113,16 +112,18 @@ class PlaceSensor():
             if within_threshold:
                 placed_msg = Bool()
                 placed_msg.data = True
-                print("Placed Sensor")
+                # execute command to drop the sensor
+                x = self.pose.position.x
+                y = self.pose.position.y
+                z = self.pose.position.z - self.ground_dist + 1.75
+                os.system(f"rosrun gazebo_ros spawn_model -file {self.directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model my_object_{self.pod_index}")
+                print("Placed Sensor!")
                 self.placed_pub.publish(placed_msg)
                 self.rate.sleep()
 
     # CURRENTLY NOT BEING USED
     def pickup_callback(self, msg: Bool) -> None:
         """
-        Callback function that determines if we are in the state of picking up a sensor
-        LLC to pickup a sensor takes over sending velocity commands.
-
         Determines the locaion of the sensor pod in world coordinates and actuates the
         gripper to a pickup location relative to the pod.
 
@@ -132,14 +133,8 @@ class PlaceSensor():
         Returns: 
         None
         """
-        testing = True
         # only execute if we have finished traveling and if we are 
         if msg.data:
-
-            # pod location relative to the drone
-            if testing:
-                # for testing, allow the pod to be anwhere in the circle with radius 0.5 m
-                self.pod_location_drone = np.array([np.random.random()/2, np.random.random()/2, -(self.ground_dist - 0.05)])
             
             # convert the sensor pod location into world coordinates
             quaternion = self.pose.orientation

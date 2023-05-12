@@ -1,5 +1,6 @@
 import rospy
 import numpy as np
+from std_msgs.msg import Float32
 from geometry_msgs.msg import PointStamped, Point32, Twist
 from tf.transformations import euler_from_quaternion
 
@@ -27,13 +28,17 @@ class PurePursuit():
         self.type = "PP"
 
         # Published Topics for Debugging Purposes
-        self.point_pub = rospy.Publisher("/pursuit_point", PointStamped, queue_size=1)
+        self.pursuit_point_pub = rospy.Publisher("/pursuit_point", PointStamped, queue_size=1)
         self.pose_pub = rospy.Publisher("/pp_pose", Point32, queue_size=1)
         self.stop = False
 
         #waypoint constraints
         self.waypoint_threshold = 0.3 # how close we need to be to the waypoint
         self.pursuit_epsilon = 0.1 #allows us to satisfy |x_f - x_d| < waypoint_threshold
+
+        # error measuring publisher
+        self.error_pub = rospy.Publisher("/pp_error", Float32, queue_size=1)
+        self.max_min_distance = 0
 
     # Compute Euclidean distance between 2 points
     def distance(self, point1, point2):
@@ -143,7 +148,7 @@ class PurePursuit():
                 break
 
         #FOR DEBUGGING
-        self.point_pub.publish(self.createPoint(desired_point))
+        self.pursuit_point_pub.publish(self.createPoint(desired_point))
         path_vector = desired_point - point
         new_yaw = np.arctan2(path_vector[1],path_vector[0])
         eta = new_yaw
@@ -175,6 +180,13 @@ class PurePursuit():
             # fix hard coding later
             z_error = 10 - self.pose.position.z
             v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
+
+        # get the minimum distance from drone to path
+        min_dist = min(min_distances)
+        # update biggest min distance if needed
+        self.max_min_distance = min_dist if min_dist < self.max_min_distance else self.max_min_distance
+        # publish the latest biggest min distance
+        self.error_pub.publish(self.max_min_distance)
 
         return False, (v_x, v_y, v_z)
 

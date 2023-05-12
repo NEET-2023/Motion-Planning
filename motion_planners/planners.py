@@ -159,7 +159,7 @@ class Planners():
         free_grid_points = np.argwhere(self.occupancy_grid == 0)
         d = 0.5
         tol = d*1.0
-        max_iterations = 1000
+        max_iterations = 5000
         iteration = 0
         path_found = False
         path = None
@@ -167,7 +167,7 @@ class Planners():
         # Repeat RRT graph generation until goal reached
         while not path_found and iteration < max_iterations:
             # genereate random point in space, goal biased-parameter
-            if np.random.uniform() < 0.2:
+            if np.random.uniform() < 0.05:
                 pos_rand = goal
                 goal_sampled = True
             else:
