@@ -163,8 +163,8 @@ class PlaceSensor():
                 else:
                     print("Going down, at pod location")
                     deviation = self.pod_location_drone[:2]
-                    self.fly_cmd.linear.x = deviation[1]**(1/12)
-                    self.fly_cmd.linear.y = deviation[2]**(1/12)
+                    self.fly_cmd.linear.x = deviation[0]**(1/12)
+                    self.fly_cmd.linear.y = deviation[1]**(1/12)
                     self.fly_cmd.linear.z = 0 if within_threshold else 0.25*np.sign(self.pickup_height - self.ground_dist)
                 self.vel_pub.publish(self.fly_cmd)
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
