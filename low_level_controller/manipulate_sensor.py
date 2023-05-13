@@ -6,12 +6,13 @@ from std_msgs.msg import Bool
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
 from geometry_msgs.msg import Twist, PoseStamped
+from Face_Forward import FaceForward
 
 
 class PlaceSensor():
     def __init__(self, rate):
         # Height control information
-        self.descent_height = 2
+        self.descent_height = 0.5
         self.flight_height = 10
         self.fly_cmd = Twist()
         self.ground_dist = 0
@@ -43,7 +44,7 @@ class PlaceSensor():
         self.location_tolerance = 0.05
 
         # directory to pod urdf
-        self.directory = os.getcwd()[:-36] + 'sensor_pod/src'
+        self.directory = os.getcwd()[:-36] + '/Perception/sensor_pod'
         
         #placement flag
         self.picked = False
@@ -105,7 +106,7 @@ class PlaceSensor():
             # bring the drone down to the sensor drop height
             self.fly_cmd.linear.x = 0
             self.fly_cmd.linear.y = 0
-            self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.descent_height - self.ground_dist)
+            self.fly_cmd.linear.z = 0 if within_threshold else 0.25*np.sign(self.descent_height - self.ground_dist)
             self.vel_pub.publish(self.fly_cmd)
             
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
@@ -115,7 +116,7 @@ class PlaceSensor():
                 # execute command to drop the sensor
                 x = self.pose.position.x
                 y = self.pose.position.y
-                z = self.pose.position.z - self.ground_dist + 1.75
+                z = self.pose.position.z - self.ground_dist + 0.25
                 os.system(f"rosrun gazebo_ros spawn_model -file {self.directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model my_object_{self.pod_index}")
                 print("Placed Sensor!")
                 self.placed_pub.publish(placed_msg)
@@ -135,11 +136,11 @@ class PlaceSensor():
         """
         # only execute if we have finished traveling and if we are 
         if msg.data:
-            
             # convert the sensor pod location into world coordinates
             quaternion = self.pose.orientation
             r = R.from_quat([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
             yaw_world = r.as_euler('xyz')[2] % (2*np.pi) # drone yaw in world frame between (0, 2*pi)
+            # BUG/SANITY CHECK: RIGHT IN WORLD ROTATION FRAME BUT NOT TRANSLATION FRAME??
             pod_x_world = self.pod_location_drone[0]*np.cos(yaw_world) - self.pod_location_drone[1]*np.sin(yaw_world)
             pod_y_world = self.pod_location_drone[0]*np.sin(yaw_world) + self.pod_location_drone[1]*np.cos(yaw_world)
 
@@ -147,6 +148,7 @@ class PlaceSensor():
             self.pod_location_world = np.array([pod_x_world, pod_y_world, self.pod_location_drone[2]])
 
             # calculate the location of the gripper with respect to the drone in world coordinates
+            # BUG/SANITY CHECK: RIGHT IN WORLD ROTATION FRAME BUT NOT TRANSLATION FRAME??
             gripper_x_world = self.gripper_location_drone[0]*np.cos(yaw_world) - self.gripper_location_drone[1]*np.sin(yaw_world)
             gripper_y_world = self.gripper_location_drone[0]*np.sin(yaw_world) + self.gripper_location_drone[1]*np.cos(yaw_world)
 
@@ -156,7 +158,7 @@ class PlaceSensor():
             # determine error between the sensor pod + epsilon height and the 
             # "anchor point" of the drone. "Anchor Point" is just some offset 
             # from the drone position
-            motion_vector = self.gripper_location_drone - self.pod_location_world
+            motion_vector = self.pod_location_world- self.gripper_location_world
 
             # if error within some extremely small tolerance, cmd zero velocity
             # and indicate we have "placed the drone". Otherwise:

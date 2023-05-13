@@ -5,13 +5,14 @@ from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import Bool, Int16
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PointStamped
 
 
 class PlaceSensor():
     def __init__(self, rate):
         # Height control information
-        self.descent_height = 2
+        self.place_height = 2
+        self.pickup_height = 0.3
         self.flight_height = 10
         self.fly_cmd = Twist()
         self.ground_dist = 0
@@ -33,13 +34,16 @@ class PlaceSensor():
         self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         # ROS pod state information
-        self.pod_location_sub = rospy.Subscriber('/pod_location', PoseStamped, self.pod_location_callback)
+        self.pod_location_sub = rospy.Subscriber('/pod_location', PointStamped, self.pod_location_callback)
         self.pod_index_sub = rospy.Subscriber('/pod_index', Int16, self.pod_index_callback)
         # ROS states to be published
         self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
         self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
 
         self.rate = rate
+
+        # directory to pod urdf
+        self.directory = os.getcwd()[:-36] + '/Perception/sensor_pod'
 
         #placement tolerance
         self.location_tolerance = 0.05
@@ -71,7 +75,7 @@ class PlaceSensor():
         """
         self.pose = msg.pose.pose
 
-    def pod_location_callback(self, msg: PoseStamped) -> None:
+    def pod_location_callback(self, msg: PointStamped) -> None:
         """
         Callback function that stores the location of the sensor pod relative to the
         position of the drone
@@ -82,7 +86,7 @@ class PlaceSensor():
         Returns:
         None
         """
-        self.pod_location_drone = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+        self.pod_location_drone = np.array([msg.point.x, msg.point.y, msg.point.z])
 
     def pod_index_callback(self, msg: Int16) -> None:
         """
@@ -107,14 +111,14 @@ class PlaceSensor():
         """
         if msg.data:
             # determine where the drone is currently located
-            within_threshold = abs(self.ground_dist - self.descent_height) < 0.1
+            within_threshold = abs(self.ground_dist - self.place_height) < 0.1
             if not within_threshold:
                 print("Going down")
             
             # bring the drone down to the sensor drop height
             self.fly_cmd.linear.x = 0
             self.fly_cmd.linear.y = 0
-            self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.descent_height - self.ground_dist)
+            self.fly_cmd.linear.z = 0 if within_threshold else 0.5*np.sign(self.place_height - self.ground_dist)
             self.vel_pub.publish(self.fly_cmd)
             
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
@@ -124,9 +128,9 @@ class PlaceSensor():
                 x = self.pose.position.x
                 y = self.pose.position.y
                 z = self.pose.position.z - self.ground_dist + 1.5
-                directory = os.getcwd()[:-36] + 'sensor_pod/src'
-                os.system(f"rosrun gazebo_ros spawn_model -file {directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model my_object_{self.pod_index}")
-                print("Placed Sensor")
+                sensor = f"sensor_{self.pod_index}"
+                os.system(f"rosrun gazebo_ros spawn_model -file {self.directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model {sensor}")
+                print(f"Placed Sensor: {sensor}")
                 self.placed_pub.publish(placed_msg)
 
     def pickup_callback(self, msg: Bool) -> None:
@@ -145,22 +149,35 @@ class PlaceSensor():
         """
 
         if msg.data:
-            # determine where the drone is currently located
-            within_threshold = abs(self.ground_dist - self.descent_height) < 0.1
+            # determine if we are close enough to the pod
+            within_threshold = self.ground_dist - self.pickup_height < 0.1
+            # bring the drone down to the sensor pickup height
             if not within_threshold:
-                print("Going down")
-            
-            # bring the drone down to the sensor drop height
-            self.fly_cmd.linear.x = 0
-            self.fly_cmd.linear.y = 0
-            self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.descent_height - self.ground_dist)
-            self.vel_pub.publish(self.fly_cmd)
-            
+                # at home base, just go straight down to pretend pick up pod
+                if np.any(np.isnan(self.pod_location_drone)):
+                    print("Going down, at base")
+                    self.fly_cmd.linear.x = 0
+                    self.fly_cmd.linear.y = 0
+                    self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.pickup_height - self.ground_dist)
+                # at pod location, use perception information to align drone with pod
+                else:
+                    print("Going down, at pod location")
+                    deviation = self.pod_location_drone[:2]
+                    self.fly_cmd.linear.x = deviation[1]**(1/12)
+                    self.fly_cmd.linear.y = deviation[2]**(1/12)
+                    self.fly_cmd.linear.z = 0 if within_threshold else 0.25*np.sign(self.pickup_height - self.ground_dist)
+                self.vel_pub.publish(self.fly_cmd)
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
             if within_threshold:
                 picked_msg = Bool()
                 picked_msg.data = True
-                print("Picked up Sensor")
+                self.fly_cmd.linear.x = 0
+                self.fly_cmd.linear.y = 0
+                self.fly_cmd.linear.z = 0
+                self.vel_pub.publish(self.fly_cmd)
+                sensor = f"sensor_{self.pod_index}"
+                os.system(f"rosservice call gazebo/delete_model '{sensor}'")
+                print(f"Picked up Sensor: {sensor}")
                 self.retrived_pub.publish(picked_msg)
 
 if __name__ ==  "__main__":

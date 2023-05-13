@@ -6,7 +6,7 @@ from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import Range
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header, Bool
+from std_msgs.msg import Header, Bool, Int16
 from planners import Planners
 sys.path.insert(0, os.getcwd()[:-15])
 from low_level_controller.PD import PD
@@ -59,6 +59,7 @@ class Navigator():
         self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point, self.waypoint_callback)
         self.finished_pub = rospy.Publisher('/done_travelling', Bool, queue_size=1)
         self.map_sub = rospy.Subscriber('/map_topic', OccupancyGrid, self.occupancy_callback)
+        self.state_sub = rospy.Subscriber('/state', Int16, self.state_callback)
         # fly command initialization
         self.fly_cmd = Twist()
         # thresholds
@@ -70,6 +71,21 @@ class Navigator():
 
         # rate parameters
         self.rate = rate
+
+        # state
+        self.state = 0
+
+    def state_callback(self, msg: Int16) -> None:
+        """
+        Simply saves in the state
+
+        Parameters: 
+        msg (Int16): state
+
+        Returns:
+        None
+        """
+        self.state = msg.data
 
     def odom_callback(self, msg: Odometry) -> None:
         """
@@ -113,6 +129,13 @@ class Navigator():
         Returns: 
         None
         """ 
+        if self.state == 6:
+            self.fly_cmd.linear.x = 0
+            self.fly_cmd.linear.y = 0
+            self.fly_cmd.linear.z = 0
+            self.vel_pub.publish(self.fly_cmd)
+            return
+
         self.waypoint = np.array([msg.x, msg.y, self.flight_height])
         if not np.all(self.last_waypoint == self.waypoint):
             print("New Waypoint received! Initializaing variables")
