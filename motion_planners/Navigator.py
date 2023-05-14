@@ -219,6 +219,11 @@ class Navigator():
                                                         self.path[i+1][0], 
                                                         self.path[i+1][1]] 
                                                         for i in range(len(self.path)-1)])
+                    self.llc.full_path_segments = np.array([[self.path[i][0], 
+                                                        self.path[i][1], 
+                                                        self.path[i+1][0], 
+                                                        self.path[i+1][1]] 
+                                                        for i in range(len(self.path)-1)])
                 self.llc.path = self.path
                 self.path_plan = False
 

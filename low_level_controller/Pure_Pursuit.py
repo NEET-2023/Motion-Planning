@@ -14,6 +14,7 @@ class PurePursuit():
         self.speed = 1.5
         self.path = path
         self.path_segments = None
+        self.full_path_segments = None
         self.pose = pose
         # PD Controller Initializations
         self.kp = 1
@@ -110,6 +111,7 @@ class PurePursuit():
         #FIND PATH POINT CLOSEST TO DRONE
         # compute minimum distances from robot to each segment of the trajectory
         min_distances = np.apply_along_axis(self.minimum_distance(point), 1, self.path_segments)
+        full_min_distances = np.apply_along_axis(self.minimum_distance(point), 1, self.full_path_segments)
         min_index = np.argmin(min_distances)
 
         # no need to look ahead of only one path segment left, just to to the end
@@ -184,7 +186,7 @@ class PurePursuit():
             v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
 
         # get the minimum distance from drone to path
-        self.min_distance = min(min_distances)
+        self.min_distance = min(full_min_distances)
         # update biggest min distance if needed
         self.max_min_distance = self.min_distance if self.min_distance > self.max_min_distance else self.max_min_distance
         # publish the latest biggest min distance
