@@ -27,15 +27,15 @@ class PlaceSensor():
         self.pod_index = 0
 
         # ROS state machine variables 
-        self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback)
-        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.pickup_callback) 
+        self.place_sensor_sub = rospy.Subscriber('/place_sensor', Bool, self.place_callback, queue_size=1)
+        self.pickup_sensor_sub = rospy.Subscriber('/pickup_sensor', Bool, self.pickup_callback, queue_size=1) 
         # ROS drone state information
-        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
-        self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
+        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback, queue_size=1)
+        self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback, queue_size=1)
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         # ROS pod state information
-        self.pod_location_sub = rospy.Subscriber('/pod_location', PointStamped, self.pod_location_callback)
-        self.pod_index_sub = rospy.Subscriber('/pod_index', Int16, self.pod_index_callback)
+        self.pod_location_sub = rospy.Subscriber('/pod_location', PointStamped, self.pod_location_callback, queue_size=1)
+        self.pod_index_sub = rospy.Subscriber('/pod_index', Int16, self.pod_index_callback, queue_size=1)
         # ROS states to be published
         self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
         self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
@@ -110,8 +110,8 @@ class PlaceSensor():
         None
         """
         if msg.data:
-            # determine where the drone is currently located
-            within_threshold = abs(self.ground_dist - self.place_height) < 0.1
+            # determine if the drone is close enough to the ground
+            within_threshold = (self.ground_dist - self.place_height < 0.1)
             if not within_threshold:
                 print("Going down to place sensor")
             
@@ -127,7 +127,7 @@ class PlaceSensor():
                 placed_msg.data = True
                 x = self.pose.position.x
                 y = self.pose.position.y
-                z = self.pose.position.z - self.ground_dist + 1.5
+                z = self.pose.position.z - 0.5
                 sensor = f"sensor_{self.pod_index}"
                 os.system(f"rosrun gazebo_ros spawn_model -file {self.directory}/sensor_pod.urdf -urdf -x {x} -y {y} -z {z} -model {sensor}")
                 print(f"Placed Sensor: {sensor}")
@@ -150,21 +150,21 @@ class PlaceSensor():
 
         if msg.data:
             # determine if we are close enough to the pod
-            within_threshold = self.ground_dist - self.pickup_height < 0.1
+            within_threshold = (self.ground_dist - self.pickup_height < 0.1)
             # bring the drone down to the sensor pickup height
             if not within_threshold:
                 # at home base, just go straight down to pretend pick up pod
-                if True or np.any(np.isnan(self.pod_location_drone)):
+                if np.any(np.isnan(self.pod_location_drone)):
                     print("Going down, at base")
                     self.fly_cmd.linear.x = 0
                     self.fly_cmd.linear.y = 0
-                    self.fly_cmd.linear.z = 0 if within_threshold else np.sign(self.pickup_height - self.ground_dist)
+                    self.fly_cmd.linear.z = np.sign(self.pickup_height - self.ground_dist)
                 # at pod location, use perception information to align drone with pod
                 else:
                     print("Going down, at pod location")
                     deviation = self.pod_location_drone[:2]
-                    self.fly_cmd.linear.x = deviation[0]**(1/12)
-                    self.fly_cmd.linear.y = deviation[1]**(1/12)
+                    self.fly_cmd.linear.x = 0.25*np.sign(deviation[0])
+                    self.fly_cmd.linear.y = 0.25*np.sign(deviation[1])
                     self.fly_cmd.linear.z = 0 if within_threshold else 0.25*np.sign(self.pickup_height - self.ground_dist)
                 self.vel_pub.publish(self.fly_cmd)
             # condition to have the drone hover at the dropoff spot to simulate sensor placement

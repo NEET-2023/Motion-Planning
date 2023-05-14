@@ -54,12 +54,11 @@ class Navigator():
         # ROS relevant initializations
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.vel_pub_debug = rospy.Publisher('/cmd_vel_debug', Twist, queue_size=1)
-        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback)
-        self.range_sub = rospy.Subscriber('/sonar_height', Range, self.range_callback)
-        self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point, self.waypoint_callback)
+        self.odom_sub = rospy.Subscriber('/ground_truth/state', Odometry, self.odom_callback, queue_size=1)
+        self.waypoint_sub = rospy.Subscriber('/waypoint_topic', Point, self.waypoint_callback, queue_size=1)
         self.finished_pub = rospy.Publisher('/done_travelling', Bool, queue_size=1)
-        self.map_sub = rospy.Subscriber('/map_topic', OccupancyGrid, self.occupancy_callback)
-        self.state_sub = rospy.Subscriber('/state', Int16, self.state_callback)
+        self.map_sub = rospy.Subscriber('/map_topic', OccupancyGrid, self.occupancy_callback, queue_size=1)
+        self.state_sub = rospy.Subscriber('/state', Int16, self.state_callback, queue_size=1)
         # fly command initialization
         self.fly_cmd = Twist()
         # thresholds
@@ -165,11 +164,12 @@ class Navigator():
             self.fly_cmd.linear.x = 0
             self.fly_cmd.linear.y = 0
             self.fly_cmd.linear.z = 1 if location[2] < self.flight_height else -1
-            self.vel_pub.publish(self.fly_cmd)
-            
+
             # condition to terminate hover sequence and let the rest of motion planning take over
-            if abs(location[2] - self.flight_height) < 0.1:
+            if abs(location[2] - self.flight_height) < 0.2:
+                self.fly_cmd.linear.z = 0
                 self.initialize_hover = False
+            self.vel_pub.publish(self.fly_cmd)
             return
 
         # only execute this logic if we have not reached the waypoint yet
@@ -236,7 +236,6 @@ class Navigator():
             # passes relevant information into a low-level controller to move the drone along the path
             self.llc.pose = self.pose
             self.llc.ground_dist = self.ground_dist
-            self.llc.within_threshold = self.within_threshold
             self.llc.threshold = self.threshold
             self.llc.prev_v_world = self.prev_v_world
             self.done_travelling.data, v_world = self.llc.actuate()
@@ -264,22 +263,6 @@ class Navigator():
         
         # indicate whether we are done travelling or not
         self.finished_pub.publish(self.done_travelling.data)
-
-    def range_callback(self, msg: Range) -> None:
-        """
-        Reads in the distance reported by the point LIDAR on the drone, providing us the 
-        distance to the ground.
-
-        Parameters:
-        msg (Range): Range object containing distance to ground data
-
-        Returns:
-        None
-        """
-        self.ground_dist = msg.range
-        
-        # if height is below threshold, increase the height of the 
-        self.within_threshold = self.ground_dist < self.threshold
 
     def vis_goal_point(self) -> None:
         """
