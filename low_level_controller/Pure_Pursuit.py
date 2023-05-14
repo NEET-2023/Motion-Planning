@@ -38,7 +38,9 @@ class PurePursuit():
 
         # error measuring publisher
         self.error_pub = rospy.Publisher("/pp_error", Float32, queue_size=1)
+        self.max_error_pub = rospy.Publisher("/pp_max_error", Float32, queue_size=1)
         self.max_min_distance = 0
+        self.min_distance = 0
 
     # Compute Euclidean distance between 2 points
     def distance(self, point1, point2):
@@ -182,11 +184,16 @@ class PurePursuit():
             v_z = self.kp * z_error - self.kd*self.prev_v_world[2]
 
         # get the minimum distance from drone to path
-        min_dist = min(min_distances)
+        self.min_distance = min(min_distances)
         # update biggest min distance if needed
-        self.max_min_distance = min_dist if min_dist < self.max_min_distance else self.max_min_distance
+        self.max_min_distance = self.min_distance if self.min_distance > self.max_min_distance else self.max_min_distance
         # publish the latest biggest min distance
-        self.error_pub.publish(self.max_min_distance)
+        error_data = Float32()
+        max_error_data = Float32()
+        error_data.data = self.min_distance
+        max_error_data.data = self.max_min_distance
+        self.error_pub.publish(error_data)
+        self.max_error_pub.publish(max_error_data)
 
         return False, (v_x, v_y, v_z)
 

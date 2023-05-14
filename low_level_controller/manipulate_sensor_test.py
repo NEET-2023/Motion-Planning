@@ -113,7 +113,7 @@ class PlaceSensor():
             # determine where the drone is currently located
             within_threshold = abs(self.ground_dist - self.place_height) < 0.1
             if not within_threshold:
-                print("Going down")
+                print("Going down to place sensor")
             
             # bring the drone down to the sensor drop height
             self.fly_cmd.linear.x = 0
@@ -154,7 +154,7 @@ class PlaceSensor():
             # bring the drone down to the sensor pickup height
             if not within_threshold:
                 # at home base, just go straight down to pretend pick up pod
-                if np.any(np.isnan(self.pod_location_drone)):
+                if True or np.any(np.isnan(self.pod_location_drone)):
                     print("Going down, at base")
                     self.fly_cmd.linear.x = 0
                     self.fly_cmd.linear.y = 0
