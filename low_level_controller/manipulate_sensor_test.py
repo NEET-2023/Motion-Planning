@@ -158,14 +158,29 @@ class PlaceSensor():
                     print("Going down, at base")
                     self.fly_cmd.linear.x = 0
                     self.fly_cmd.linear.y = 0
-                    self.fly_cmd.linear.z = np.sign(self.pickup_height - self.ground_dist)
+                    self.fly_cmd.linear.z = 0.5*np.sign(self.pickup_height - self.ground_dist)
                 # at pod location, use perception information to align drone with pod
                 else:
                     print("Going down, at pod location")
                     deviation = self.pod_location_drone[:2]
-                    self.fly_cmd.linear.x = 0.25*np.sign(deviation[0])
-                    self.fly_cmd.linear.y = 0.25*np.sign(deviation[1])
-                    self.fly_cmd.linear.z = 0 if within_threshold else 0.25*np.sign(self.pickup_height - self.ground_dist)
+                    if self.ground_dist > 1:
+                        stabilizing_velocity = 0.05
+                    elif self.ground_dist > 0.5:
+                        stabilizing_velocity = 0.02
+                    else:
+                        stabilizing_velocity = 0.01
+                    # first fix x, y, positioning
+                    if np.any(np.abs(deviation) > 10):
+                        self.fly_cmd.linear.x = -stabilizing_velocity*np.sign(deviation[1]) if abs(deviation[1]) > 10 else 0
+                        self.fly_cmd.linear.y = -stabilizing_velocity*np.sign(deviation[0]) if abs(deviation[0]) > 10 else 0
+                        self.fly_cmd.linear.z = 0
+                        self.vel_pub.publish(self.fly_cmd)
+                        return
+                    
+                    # then fix z positioning
+                    self.fly_cmd.linear.x = 0
+                    self.fly_cmd.linear.y = 0
+                    self.fly_cmd.linear.z = 0.25*np.sign(self.pickup_height - self.ground_dist)
                 self.vel_pub.publish(self.fly_cmd)
             # condition to have the drone hover at the dropoff spot to simulate sensor placement
             if within_threshold:
