@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import Bool, Int16
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
-from geometry_msgs.msg import Twist, PointStamped
+from geometry_msgs.msg import Twist, PointStamped, Point32
 
 
 class PlaceSensor():
@@ -39,17 +39,12 @@ class PlaceSensor():
         # ROS states to be published
         self.placed_pub = rospy.Publisher('/sensor_placed', Bool, queue_size=1)
         self.retrived_pub = rospy.Publisher('/sensor_pickedup', Bool, queue_size=1)
-
+        # error publisher
+        self.deviation_pub = rospy.Publisher('/deviation', Point32, queue_size=1)
+        # node rate (unused)
         self.rate = rate
-
         # directory to pod urdf
         self.directory = os.getcwd()[:-36] + '/Perception/sensor_pod'
-
-        #placement tolerance
-        self.location_tolerance = 0.05
-        
-        #placement flag
-        self.picked = False
 
     def range_callback(self, msg) -> None:
         """
@@ -163,6 +158,12 @@ class PlaceSensor():
                 else:
                     print("Going down, at pod location")
                     deviation = self.pod_location_drone[:2]
+                    # publish the deviation
+                    deviation_point = Point32()
+                    deviation_point.x = deviation[1]
+                    deviation_point.y = deviation[0]
+                    self.deviation_pub.publish(deviation_point)
+                    # actuate drone based on height from pod. The closer to the ground, the slower
                     if self.ground_dist > 1:
                         stabilizing_velocity = 0.05
                     elif self.ground_dist > 0.5:
